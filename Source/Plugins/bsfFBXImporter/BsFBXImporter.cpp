@@ -123,7 +123,7 @@ namespace bs
 		const MeshImportOptions* meshImportOptions = static_cast<const MeshImportOptions*>(importOptions.get());
 
 		desc.usage = MU_STATIC;
-		if (meshImportOptions->getCPUCached())
+		if (meshImportOptions->cpuCached)
 			desc.usage |= MU_CPUCACHED;
 
 		SPtr<Mesh> mesh = Mesh::_createPtr(rendererMeshData->getData(), desc);
@@ -145,7 +145,7 @@ namespace bs
 		const MeshImportOptions* meshImportOptions = static_cast<const MeshImportOptions*>(importOptions.get());
 
 		desc.usage = MU_STATIC;
-		if (meshImportOptions->getCPUCached())
+		if (meshImportOptions->cpuCached)
 			desc.usage |= MU_CPUCACHED;
 
 		SPtr<Mesh> mesh = Mesh::_createPtr(rendererMeshData->getData(), desc);
@@ -158,7 +158,7 @@ namespace bs
 		{
 			output.push_back({ u8"primary", mesh });
 
-			CollisionMeshType collisionMeshType = meshImportOptions->getCollisionMeshType();
+			CollisionMeshType collisionMeshType = meshImportOptions->collisionMeshType;
 			if(collisionMeshType != CollisionMeshType::None)
 			{
 				if(Physics::isStarted())
@@ -176,7 +176,7 @@ namespace bs
 				}
 			}
 
-			Vector<ImportedAnimationEvents> events = meshImportOptions->getAnimationEvents();
+			Vector<ImportedAnimationEvents> events = meshImportOptions->animationEvents;
 			for(auto& entry : animationClips)
 			{
 				SPtr<AnimationClip> clip = AnimationClip::_createPtr(entry.curves, entry.isAdditive, entry.sampleRate, 
@@ -212,13 +212,13 @@ namespace bs
 
 		const MeshImportOptions* meshImportOptions = static_cast<const MeshImportOptions*>(importOptions.get());
 		FBXImportOptions fbxImportOptions;
-		fbxImportOptions.importNormals = meshImportOptions->getImportNormals();
-		fbxImportOptions.importTangents = meshImportOptions->getImportTangents();
-		fbxImportOptions.importAnimation = meshImportOptions->getImportAnimation();
-		fbxImportOptions.importBlendShapes = meshImportOptions->getImportBlendShapes();
-		fbxImportOptions.importSkin = meshImportOptions->getImportSkin();
-		fbxImportOptions.importScale = meshImportOptions->getImportScale();
-		fbxImportOptions.reduceKeyframes = meshImportOptions->getKeyFrameReduction();
+		fbxImportOptions.importNormals = meshImportOptions->importNormals;
+		fbxImportOptions.importTangents = meshImportOptions->importTangents;
+		fbxImportOptions.importAnimation = meshImportOptions->importAnimation;
+		fbxImportOptions.importBlendShapes = meshImportOptions->importBlendShapes;
+		fbxImportOptions.importSkin = meshImportOptions->importSkin;
+		fbxImportOptions.importScale = meshImportOptions->importScale;
+		fbxImportOptions.reduceKeyframes = meshImportOptions->reduceKeyFrames;
 
 		FBXImportScene importedScene;
 		bakeTransforms(fbxScene);
@@ -244,8 +244,8 @@ namespace bs
 		// Import animation clips
 		if (!importedScene.clips.empty())
 		{
-			Vector<AnimationSplitInfo> splits = meshImportOptions->getAnimationClipSplits();
-			convertAnimations(importedScene.clips, splits, skeleton, meshImportOptions->getImportRootMotion(), animation);
+			const Vector<AnimationSplitInfo>& splits = meshImportOptions->animationSplits;
+			convertAnimations(importedScene.clips, splits, skeleton, meshImportOptions->importRootMotion, animation);
 		}
 
 		// TODO - Later: Optimize mesh: Remove bad and degenerate polygons, weld nearby vertices, optimize for vertex cache
@@ -1925,7 +1925,7 @@ namespace bs
 
 	void FBXImporter::bakeTransforms(FbxScene* scene)
 	{
-		// FBX stores transforms in a more complex way than just translation-rotation-scale as used by Banshee.
+		// FBX stores transforms in a more complex way than just translation-rotation-scale as used by the framework.
 		// Instead they also support rotations offsets and pivots, scaling pivots and more. We wish to bake all this data
 		// into a standard transform so we can access it using node's local TRS properties (e.g. FbxNode::LclTranslation).
 
@@ -1961,7 +1961,7 @@ namespace bs
 				node->SetGeometricRotation(FbxNode::eDestinationPivot, node->GetGeometricRotation(FbxNode::eSourcePivot));
 				node->SetGeometricScaling(FbxNode::eDestinationPivot, node->GetGeometricScaling(FbxNode::eSourcePivot));
 
-				// Banshee assumes euler angles are in YXZ order
+				// Framework assumes euler angles are in YXZ order
 				node->SetRotationOrder(FbxNode::eDestinationPivot, FbxEuler::eOrderYXZ);
 
 				// Keep interpolation as is

@@ -4,6 +4,7 @@
 #include "Error/BsException.h"
 #include "RenderAPI/BsRenderAPI.h"
 #include "Managers/BsHardwareBufferManager.h"
+#include "Profiling/BsRenderStats.h"
 
 namespace bs
 {
@@ -74,9 +75,9 @@ namespace bs
 			lookup[BF_8X1U] = 1;
 			lookup[BF_8X2U] = 2;
 			lookup[BF_8X4U] = 4;
-			lookup[BF_16X1U] = 1;
-			lookup[BF_16X2U] = 2;
-			lookup[BF_16X4U] = 4;
+			lookup[BF_16X1U] = 2;
+			lookup[BF_16X2U] = 4;
+			lookup[BF_16X4U] = 8;
 			lookup[BF_32X1U] = 4;
 			lookup[BF_32X2U] = 8;
 			lookup[BF_32X3U] = 12;
@@ -98,20 +99,120 @@ namespace bs
 
 	namespace ct
 	{
-	GpuBuffer::GpuBuffer(const GPU_BUFFER_DESC& desc, UINT32 deviceMask)
-		:HardwareBuffer(getBufferSize(desc)), mProperties(desc)
+	GpuBuffer::GpuBuffer(const GPU_BUFFER_DESC& desc, GpuDeviceFlags deviceMask)
+		:HardwareBuffer(getBufferSize(desc), desc.usage, deviceMask), mProperties(desc)
 	{
+		if (desc.type != GBT_STANDARD)
+			assert(desc.format == BF_UNKNOWN && "Format must be set to BF_UNKNOWN when using non-standard buffers");
+		else
+			assert(desc.elementSize == 0 && "No element size can be provided for standard buffer. Size is determined from format.");
+	}
+
+	GpuBuffer::GpuBuffer(const GPU_BUFFER_DESC& desc, SPtr<HardwareBuffer> underlyingBuffer)
+		: HardwareBuffer(getBufferSize(desc), desc.usage, underlyingBuffer->getDeviceMask()), mProperties(desc)
+		, mBuffer(underlyingBuffer.get()), mSharedBuffer(std::move(underlyingBuffer)), mIsExternalBuffer(true)
+	{
+		const auto& props = getProperties();
+		assert(mSharedBuffer->getSize() == (props.getElementCount() * props.getElementSize()));
+
+		if (desc.type != GBT_STANDARD)
+			assert(desc.format == BF_UNKNOWN && "Format must be set to BF_UNKNOWN when using non-standard buffers");
+		else
+			assert(desc.elementSize == 0 && "No element size can be provided for standard buffer. Size is determined from format.");
 	}
 
 	GpuBuffer::~GpuBuffer()
 	{
-		// Make sure that derived classes call clearBufferViews
-		// I can't call it here since it needs a virtual method call
+		BS_INC_RENDER_STAT_CAT(ResDestroyed, RenderStatObject_GpuBuffer);
+
+		if(mBuffer && !mSharedBuffer)
+			mBufferDeleter(mBuffer);
+	}
+
+	void GpuBuffer::initialize()
+	{
+		BS_INC_RENDER_STAT_CAT(ResCreated, RenderStatObject_GpuBuffer);
+		CoreObject::initialize();
+	}
+
+	void* GpuBuffer::map(UINT32 offset, UINT32 length, GpuLockOptions options, UINT32 deviceIdx, UINT32 queueIdx)
+	{
+#if BS_PROFILING_ENABLED
+		if (options == GBL_READ_ONLY || options == GBL_READ_WRITE)
+		{
+			BS_INC_RENDER_STAT_CAT(ResRead, RenderStatObject_GpuBuffer);
+		}
+
+		if (options == GBL_READ_WRITE || options == GBL_WRITE_ONLY || options == GBL_WRITE_ONLY_DISCARD || options == GBL_WRITE_ONLY_NO_OVERWRITE)
+		{
+			BS_INC_RENDER_STAT_CAT(ResWrite, RenderStatObject_GpuBuffer);
+		}
+#endif
+
+		return mBuffer->lock(offset, length, options, deviceIdx, queueIdx);
+	}
+
+	void GpuBuffer::unmap()
+	{
+		mBuffer->unlock();
+	}
+
+	void GpuBuffer::readData(UINT32 offset, UINT32 length, void* dest, UINT32 deviceIdx, UINT32 queueIdx)
+	{
+		BS_INC_RENDER_STAT_CAT(ResRead, RenderStatObject_GpuBuffer);
+
+		mBuffer->readData(offset, length, dest, deviceIdx, queueIdx);
+	}
+
+	void GpuBuffer::writeData(UINT32 offset, UINT32 length, const void* source, BufferWriteType writeFlags, 
+		UINT32 queueIdx)
+	{
+		BS_INC_RENDER_STAT_CAT(ResWrite, RenderStatObject_GpuBuffer);
+
+		mBuffer->writeData(offset, length, source, writeFlags, queueIdx);
+	}
+
+	void GpuBuffer::copyData(HardwareBuffer& srcBuffer, UINT32 srcOffset, UINT32 dstOffset, UINT32 length, 
+		bool discardWholeBuffer, const SPtr<CommandBuffer>& commandBuffer)
+	{
+		auto& srcGpuBuffer = static_cast<GpuBuffer&>(srcBuffer);
+		mBuffer->copyData(*srcGpuBuffer.mBuffer, srcOffset, dstOffset, length, discardWholeBuffer, commandBuffer);
+	}
+
+	SPtr<GpuBuffer> GpuBuffer::getView(GpuBufferType type, GpuBufferFormat format, UINT32 elementSize)
+	{
+		const UINT32 elemSize = type == GBT_STANDARD ? bs::GpuBuffer::getFormatSize(format) : elementSize;
+		if((mBuffer->getSize() % elemSize) != 0)
+		{
+			LOGERR("Size of the buffer isn't divisible by individual element size provided for the buffer view.");
+			return nullptr;
+		}
+
+		GPU_BUFFER_DESC desc;
+		desc.type = type;
+		desc.format = format;
+		desc.usage = mUsage;
+		desc.elementSize = elementSize;
+		desc.elementCount = mBuffer->getSize() / elemSize;
+
+		if(!mSharedBuffer)
+		{
+			mSharedBuffer = bs_shared_ptr(mBuffer, mBufferDeleter);
+			mIsExternalBuffer = false;
+		}
+
+		SPtr<GpuBuffer> newView = create(desc, mSharedBuffer);
+		return newView;
 	}
 
 	SPtr<GpuBuffer> GpuBuffer::create(const GPU_BUFFER_DESC& desc, GpuDeviceFlags deviceMask)
 	{
 		return HardwareBufferManager::instance().createGpuBuffer(desc, deviceMask);
+	}
+
+	SPtr<GpuBuffer> GpuBuffer::create(const GPU_BUFFER_DESC& desc, SPtr<HardwareBuffer> underlyingBuffer)
+	{
+		return HardwareBufferManager::instance().createGpuBuffer(desc, std::move(underlyingBuffer));
 	}
 	}
 }

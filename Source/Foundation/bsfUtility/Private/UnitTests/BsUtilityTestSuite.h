@@ -14,6 +14,12 @@ namespace bs
 		void shutDown() override;
 
 	private:
+		void testBitfield();
 		void testOctree();
+		void testSmallVector();
+		void testDynArray();
+		void testComplex();
+		void testMinHeap();
+		void testQuadtree();
 	};
 }

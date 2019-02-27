@@ -27,6 +27,9 @@ namespace bs
 			BS_RTTI_MEMBER_PLAIN_NAMED(length, mInfo.length, 3)
 			BS_RTTI_MEMBER_PLAIN_NAMED(thickness, mInfo.thickness, 4)
 			BS_RTTI_MEMBER_PLAIN_NAMED(arc, mInfo.arc, 5)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeType, mInfo.mode.type, 6)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeInterval, mInfo.mode.interval, 7)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeSpeed, mInfo.mode.speed, 8)
 		BS_END_RTTI_MEMBERS
 
 	public:
@@ -134,6 +137,9 @@ namespace bs
 	private:
 		BS_BEGIN_RTTI_MEMBERS
 			BS_RTTI_MEMBER_PLAIN_NAMED(length, mInfo.length, 0)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeType, mInfo.mode.type, 1)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeInterval, mInfo.mode.interval, 2)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeSpeed, mInfo.mode.speed, 3)
 		BS_END_RTTI_MEMBERS
 
 	public:
@@ -162,6 +168,9 @@ namespace bs
 			BS_RTTI_MEMBER_PLAIN_NAMED(radius, mInfo.radius, 0)
 			BS_RTTI_MEMBER_PLAIN_NAMED(thickness, mInfo.thickness, 1)
 			BS_RTTI_MEMBER_PLAIN_NAMED(arc, mInfo.arc, 2)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeType, mInfo.mode.type, 3)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeInterval, mInfo.mode.interval, 4)
+			BS_RTTI_MEMBER_PLAIN_NAMED(modeSpeed, mInfo.mode.speed, 5)
 		BS_END_RTTI_MEMBERS
 
 	public:
@@ -215,6 +224,7 @@ namespace bs
 		BS_BEGIN_RTTI_MEMBERS
 			BS_RTTI_MEMBER_PLAIN_NAMED(type, mInfo.type, 0)
 			BS_RTTI_MEMBER_REFL_NAMED(mesh, mInfo.mesh, 1)
+			BS_RTTI_MEMBER_PLAIN_NAMED(sequential, mInfo.sequential, 2)
 		BS_END_RTTI_MEMBERS
 
 	public:
@@ -241,6 +251,7 @@ namespace bs
 	private:
 		BS_BEGIN_RTTI_MEMBERS
 			BS_RTTI_MEMBER_PLAIN_NAMED(type, mInfo.type, 0)
+			BS_RTTI_MEMBER_PLAIN_NAMED(sequential, mInfo.sequential, 1)
 		BS_END_RTTI_MEMBERS
 
 	public:
@@ -261,6 +272,68 @@ namespace bs
 		}
 	};
 
+	template<> struct RTTIPlainType<ParticleBurst>
+	{
+		enum { id = TID_ParticleBurst }; enum { hasDynamicSize = 1 };
+
+		/** @copydoc RTTIPlainType::toMemory */
+		static void toMemory(const ParticleBurst& data, char* memory)
+		{
+			UINT32 size = sizeof(UINT32);
+			char* memoryStart = memory;
+			memory += sizeof(UINT32);
+
+			UINT32 version = 0; // In case the data structure changes
+			memory = rttiWriteElem(version, memory, size);
+			memory = rttiWriteElem(data.time, memory, size);
+			memory = rttiWriteElem(data.cycles, memory, size);
+			memory = rttiWriteElem(data.count, memory, size);
+			memory = rttiWriteElem(data.interval, memory, size);
+
+			memcpy(memoryStart, &size, sizeof(UINT32));
+		}
+
+		/** @copydoc RTTIPlainType::fromMemory */
+		static UINT32 fromMemory(ParticleBurst& data, char* memory)
+		{
+			UINT32 size = 0;
+			memory = rttiReadElem(size, memory);
+
+			UINT32 version;
+			memory = rttiReadElem(version, memory);
+
+			switch(version)
+			{
+			case 0:
+				memory = rttiReadElem(data.time, memory);
+				memory = rttiReadElem(data.cycles, memory);
+				memory = rttiReadElem(data.count, memory);
+				memory = rttiReadElem(data.interval, memory);
+				break;
+			default:
+				LOGERR("Unknown version of ParticleBurst data. Unable to deserialize.");
+				break;
+			}
+
+			return size;
+		}
+
+		/** @copydoc RTTIPlainType::getDynamicSize */
+		static UINT32 getDynamicSize(const ParticleBurst& data)
+		{
+			UINT64 dataSize = sizeof(UINT32) + sizeof(UINT32);
+			dataSize += rttiGetElemSize(data.time);
+			dataSize += rttiGetElemSize(data.cycles);
+			dataSize += rttiGetElemSize(data.count);
+			dataSize += rttiGetElemSize(data.interval);
+
+			assert(dataSize <= std::numeric_limits<UINT32>::max());
+
+			return (UINT32)dataSize;
+		}
+	};
+
+
 	class BS_CORE_EXPORT ParticleEmitterRTTI : public RTTIType<ParticleEmitter, IReflectable, ParticleEmitterRTTI>
 	{
 	private:
@@ -278,6 +351,8 @@ namespace bs
 			BS_RTTI_MEMBER_PLAIN(mFlipU, 10)
 			BS_RTTI_MEMBER_PLAIN(mFlipV, 11)
 			BS_RTTI_MEMBER_REFLPTR(mShape, 12)
+			BS_RTTI_MEMBER_PLAIN(mRandomOffset, 13)
+			BS_RTTI_MEMBER_PLAIN_ARRAY(mBursts, 14)
 		BS_END_RTTI_MEMBERS
 
 	public:
@@ -379,6 +454,136 @@ namespace bs
 		}
 	};
 
+	class BS_CORE_EXPORT ParticleForceRTTI : public RTTIType<ParticleForce, IReflectable, ParticleForceRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN_NAMED(force, mDesc.force, 0)
+			BS_RTTI_MEMBER_PLAIN_NAMED(worldSpace, mDesc.worldSpace, 1)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleForce";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleForce;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleForce>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleGravityRTTI : public RTTIType<ParticleGravity, IReflectable, ParticleGravityRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN_NAMED(scale, mDesc.scale, 0)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleGravity";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleGravity;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleGravity>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleColorRTTI : public RTTIType<ParticleColor, IReflectable, ParticleColorRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN_NAMED(color, mDesc.color, 0)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleColor";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleColor;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleColor>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleSizeRTTI : public RTTIType<ParticleSize, IReflectable, ParticleSizeRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN_NAMED(size, mDesc.size, 0)
+			BS_RTTI_MEMBER_PLAIN_NAMED(size3D, mDesc.size3D, 1)
+			BS_RTTI_MEMBER_PLAIN_NAMED(use3DSize, mDesc.use3DSize, 2)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleSize";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleSize;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleSize>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleRotationRTTI : public RTTIType<ParticleRotation, IReflectable, ParticleRotationRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN_NAMED(rotation, mDesc.rotation, 0)
+			BS_RTTI_MEMBER_PLAIN_NAMED(rotation3D, mDesc.rotation3D, 1)
+			BS_RTTI_MEMBER_PLAIN_NAMED(use3DRotation, mDesc.use3DRotation, 2)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleRotation";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleRotation;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleRotation>();
+		}
+	};
+
 	class BS_CORE_EXPORT ParticleCollisionsRTTI : 
 		public RTTIType<ParticleCollisions, IReflectable, ParticleCollisionsRTTI>
 	{
@@ -409,28 +614,155 @@ namespace bs
 			return bs_shared_ptr_new<ParticleCollisions>();
 		}
 	};
+
+	class BS_CORE_EXPORT ParticleVectorFieldSettingsRTTI : public RTTIType<ParticleVectorFieldSettings, IReflectable, ParticleVectorFieldSettingsRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_REFL(vectorField, 0)
+			BS_RTTI_MEMBER_PLAIN(intensity, 1)
+			BS_RTTI_MEMBER_PLAIN(tightness, 2)
+			BS_RTTI_MEMBER_PLAIN(scale, 3)
+			BS_RTTI_MEMBER_PLAIN(offset, 4)
+			BS_RTTI_MEMBER_PLAIN(rotation, 5)
+			BS_RTTI_MEMBER_PLAIN(rotationRate, 6)
+			BS_RTTI_MEMBER_PLAIN(tilingX, 7)
+			BS_RTTI_MEMBER_PLAIN(tilingY, 8)
+			BS_RTTI_MEMBER_PLAIN(tilingZ, 9)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleVectorFieldSettings";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleVectorFieldSettings;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleVectorFieldSettings>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleDepthCollisionSettingsRTTI : 
+	public RTTIType<ParticleDepthCollisionSettings, IReflectable, ParticleDepthCollisionSettingsRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN(enabled, 0)
+			BS_RTTI_MEMBER_PLAIN(restitution, 1)
+			BS_RTTI_MEMBER_PLAIN(dampening, 2)
+			BS_RTTI_MEMBER_PLAIN(radiusScale, 3)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleDepthCollisionSettings";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleDepthCollisionSettings;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleDepthCollisionSettings>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleGpuSimulationSettingsRTTI : 
+	public RTTIType<ParticleGpuSimulationSettings, IReflectable, ParticleGpuSimulationSettingsRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_REFL(vectorField, 0)
+			BS_RTTI_MEMBER_PLAIN(colorOverLifetime, 1)
+			BS_RTTI_MEMBER_PLAIN(sizeScaleOverLifetime, 2)
+			BS_RTTI_MEMBER_REFL(depthCollision, 3)
+			BS_RTTI_MEMBER_PLAIN(acceleration, 4)
+			BS_RTTI_MEMBER_PLAIN(drag, 5)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleGpuSimulationSettings";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleGpuSimulationSettings;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleGpuSimulationSettings>();
+		}
+	};
+
+	class BS_CORE_EXPORT ParticleSystemSettingsRTTI : 
+		public RTTIType<ParticleSystemSettings, IReflectable, ParticleSystemSettingsRTTI>
+	{
+	private:
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN(simulationSpace, 0)
+			BS_RTTI_MEMBER_PLAIN(orientation, 1)
+			BS_RTTI_MEMBER_PLAIN(orientationLockY, 2)
+			BS_RTTI_MEMBER_PLAIN(orientationPlaneNormal, 3)
+			BS_RTTI_MEMBER_PLAIN(sortMode, 4)
+			BS_RTTI_MEMBER_PLAIN(duration, 5)
+			BS_RTTI_MEMBER_PLAIN(isLooping, 6)
+			BS_RTTI_MEMBER_PLAIN(maxParticles, 7)
+			BS_RTTI_MEMBER_PLAIN(useAutomaticSeed, 8)
+			//BS_RTTI_MEMBER_PLAIN(gravityScale, 9)
+			BS_RTTI_MEMBER_PLAIN(manualSeed, 10)
+			BS_RTTI_MEMBER_REFL(material, 11)
+			BS_RTTI_MEMBER_PLAIN(useAutomaticBounds, 12)
+			BS_RTTI_MEMBER_PLAIN(customBounds, 13)
+			BS_RTTI_MEMBER_PLAIN(renderMode, 14)
+			BS_RTTI_MEMBER_REFL(mesh, 15)
+		BS_END_RTTI_MEMBERS
+
+	public:
+		const String& getRTTIName() override
+		{
+			static String name = "ParticleSystemSettings";
+			return name;
+		}
+
+		UINT32 getRTTIId() override
+		{
+			return TID_ParticleSystemSettings;
+		}
+
+		SPtr<IReflectable> newRTTIObject() override
+		{
+			return bs_shared_ptr_new<ParticleSystemSettings>();
+		}
+	};
+
 	class BS_CORE_EXPORT ParticleSystemRTTI : public RTTIType<ParticleSystem, IReflectable, ParticleSystemRTTI>
 	{
 	private:
 		BS_BEGIN_RTTI_MEMBERS
-			BS_RTTI_MEMBER_PLAIN(mSimulationSpace, 0)
-			BS_RTTI_MEMBER_PLAIN(mOrientation, 1)
-			BS_RTTI_MEMBER_PLAIN(mOrientationLockY, 2)
-			BS_RTTI_MEMBER_PLAIN(mOrientationPlane, 3)
-			BS_RTTI_MEMBER_PLAIN(mSortMode, 4)
-			BS_RTTI_MEMBER_PLAIN(mDuration, 5)
-			BS_RTTI_MEMBER_PLAIN(mIsLooping, 6)
-			BS_RTTI_MEMBER_PLAIN(mMaxParticles, 7)
-			BS_RTTI_MEMBER_PLAIN(mUseAutomaticSeed, 8)
-			BS_RTTI_MEMBER_PLAIN(mGravityScale, 9)
-			BS_RTTI_MEMBER_PLAIN(mManualSeed, 10)
-			BS_RTTI_MEMBER_REFL(mMaterial, 11)
-			BS_RTTI_MEMBER_REFLPTR_ARRAY(mEmitters, 12)
-			BS_RTTI_MEMBER_REFLPTR_ARRAY(mEvolvers, 13)
+			BS_RTTI_MEMBER_REFL(mSettings, 0)
+			BS_RTTI_MEMBER_REFLPTR_ARRAY(mEmitters, 1)
+			BS_RTTI_MEMBER_REFLPTR_ARRAY(mEvolvers, 2)
+			BS_RTTI_MEMBER_REFL(mGpuSimulationSettings, 3)
+			BS_RTTI_MEMBER_PLAIN(mLayer, 4)
 		BS_END_RTTI_MEMBERS
 
 	public:
-		void onDeserializationEnded(IReflectable* obj, const UnorderedMap<String, UINT64>& params) override
+		void onDeserializationEnded(IReflectable* obj, SerializationContext* context) override
 		{
 			// Note: Since this is a CoreObject I should call initialize() right after deserialization,
 			// but since this specific type is used in Components we delay initialization until Component

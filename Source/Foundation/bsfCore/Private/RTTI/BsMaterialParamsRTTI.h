@@ -98,28 +98,30 @@ namespace bs
 
 		MaterialParam& getParamData(MaterialParams* obj, UINT32 idx)
 		{
-			Vector<MaterialParam>& params = any_cast_ref<Vector<MaterialParam>>(obj->mRTTIData);
-			return params[idx];
+			return mMatParams[idx];
 		}
 
 		void setParamData(MaterialParams* obj, UINT32 idx, MaterialParam& param)
 		{
 			UINT32 paramIdx = param.index;
-			if(paramIdx == (UINT32)-1)
-				paramIdx = (UINT32)obj->mParams.size();
 
-			obj->mParams.push_back(param.data);
+			// Older saved files might not have indices preserved
+			if(paramIdx == (UINT32)-1)
+				paramIdx = mNextParamIdx++;
+
+			obj->mParams[paramIdx] = param.data;
 			obj->mParamLookup[param.name] = paramIdx;
 		}
 
 		UINT32 getParamDataArraySize(MaterialParams* obj)
 		{
-			Vector<MaterialParam>& params = any_cast_ref<Vector<MaterialParam>>(obj->mRTTIData);
-			return (UINT32)params.size();
+			return (UINT32)mMatParams.size();
 		}
 
 		void setParamDataArraySize(MaterialParams* obj, UINT32 size)
-		{ }
+		{
+			obj->mParams.resize(size);
+		}
 
 		SPtr<DataStream> getDataBuffer(MaterialParams* obj, UINT32& size)
 		{
@@ -214,27 +216,18 @@ namespace bs
 				&MaterialParamsRTTI::getDataParamArraySize, &MaterialParamsRTTI::setDataParam, &MaterialParamsRTTI::setDataParamArraySize);
 		}
 
-		void onSerializationStarted(IReflectable* obj, const UnorderedMap<String, UINT64>& params) override
+		void onSerializationStarted(IReflectable* obj, SerializationContext* context) override
 		{
 			MaterialParams* paramsObj = static_cast<MaterialParams*>(obj);
 
-			Vector<MaterialParam> matParams;
 			for (auto& entry : paramsObj->mParamLookup)
 			{
 				UINT32 paramIdx = entry.second;
-				matParams.push_back({ entry.first, paramIdx, paramsObj->mParams[paramIdx] });
+				mMatParams.push_back({ entry.first, paramIdx, paramsObj->mParams[paramIdx] });
 			}
-
-			paramsObj->mRTTIData = matParams;
 		}
 
-		void onSerializationEnded(IReflectable* obj, const UnorderedMap<String, UINT64>& params) override
-		{
-			MaterialParams* paramsObj = static_cast<MaterialParams*>(obj);
-			paramsObj->mRTTIData = nullptr;
-		}
-
-		void onDeserializationEnded(IReflectable* obj, const UnorderedMap<String, UINT64>& params) override
+		void onDeserializationEnded(IReflectable* obj, SerializationContext* context) override
 		{
 			MaterialParams* paramsObj = static_cast<MaterialParams*>(obj);
 
@@ -292,6 +285,10 @@ namespace bs
 		{
 			return bs_shared_ptr_new<MaterialParams>();
 		}
+
+	private:
+		Vector<MaterialParam> mMatParams;
+		UINT32 mNextParamIdx = 0;
 	};
 
 	template<> struct RTTIPlainType<MaterialParamsBase::ParamData>
@@ -313,7 +310,9 @@ namespace bs
 			memory = rttiReadElem(data.dataType, memory, size);
 			memory = rttiReadElem(data.index, memory, size);
 			memory = rttiReadElem(data.arraySize, memory, size);
+
 			data.version = 1;
+			size += sizeof(data.version);
 
 			return size;
 		}
@@ -373,6 +372,10 @@ namespace bs
 				
 				UINT32 curveType = 0;
 				memory = rttiReadElem(curveType, memory);
+
+				data.floatCurve = nullptr;
+				data.colorGradient = nullptr;
+				data.spriteTextureIdx = (UINT32)-1;
 
 				switch(curveType)
 				{

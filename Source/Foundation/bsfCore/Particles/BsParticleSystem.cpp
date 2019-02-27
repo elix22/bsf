@@ -11,33 +11,124 @@
 #include "Renderer/BsCamera.h"
 #include "Renderer/BsRenderer.h"
 #include "Physics/BsPhysics.h"
+#include "Particles/BsVectorField.h"
+#include "Mesh/BsMesh.h"
+#include "CoreThread/BsCoreObjectSync.h"
+#include "Scene/BsSceneManager.h"
 
 namespace bs
 {
 	static constexpr UINT32 INITIAL_PARTICLE_CAPACITY = 1000;
 
-	bool evolverCompareCallback(const ParticleEvolver* a, const ParticleEvolver* b)
+	RTTITypeBase* ParticleSystemSettings::getRTTIStatic()
 	{
-		if (a->getPriority() == b->getPriority())
-			return a > b; // Use address, at this point it doesn't matter, but std::set requires us to differentiate
-		else
-			return a->getPriority() > b->getPriority();
+		return ParticleSystemSettingsRTTI::instance();
 	}
 
-	void ParticleSystemBase::setSimulationSpace(ParticleSimulationSpace value)
+	RTTITypeBase* ParticleSystemSettings::getRTTI() const
 	{
-		if(mSimulationSpace == value)
-			return;
+		return getRTTIStatic();
+	}
 
-		mSimulationSpace = value;
-		_markCoreDirty();
+	template <bool Core>
+	template <class P>
+	void TParticleSystemSettings<Core>::rttiEnumFields(P p)
+	{
+		p(gpuSimulation);
+		p(simulationSpace);
+		p(orientation);
+		p(orientationPlaneNormal);
+		p(orientationLockY);
+		p(duration);
+		p(isLooping);
+		p(sortMode);
+		p(material);
+		p(useAutomaticBounds);
+		p(customBounds);
+		p(renderMode);
+		p(mesh);
+	}
+
+	template<bool Core>
+	template<class P>
+	void TParticleVectorFieldSettings<Core>::rttiEnumFields(P p)
+	{
+		p(intensity);
+		p(tightness);
+		p(scale);
+		p(offset);
+		p(rotation);
+		p(rotationRate);
+		p(tilingX);
+		p(tilingY);
+		p(tilingZ);
+		p(vectorField);
+	}
+
+	RTTITypeBase* ParticleVectorFieldSettings::getRTTIStatic()
+	{
+		return ParticleVectorFieldSettingsRTTI::instance();
+	}
+
+	RTTITypeBase* ParticleVectorFieldSettings::getRTTI() const
+	{
+		return getRTTIStatic();
+	}
+
+	template<class P>
+	void ParticleDepthCollisionSettings::rttiEnumFields(P p)
+	{
+		p(enabled);
+		p(restitution);
+		p(dampening);
+		p(radiusScale);
+	}
+
+	RTTITypeBase* ParticleDepthCollisionSettings::getRTTIStatic()
+	{
+		return ParticleDepthCollisionSettingsRTTI::instance();
+	}
+
+	RTTITypeBase* ParticleDepthCollisionSettings::getRTTI() const
+	{
+		return getRTTIStatic();
+	}
+
+	template<bool Core>
+	template<class P>
+	void TParticleGpuSimulationSettings<Core>::rttiEnumFields(P p)
+	{
+		p(colorOverLifetime);
+		p(sizeScaleOverLifetime);
+		p(acceleration);
+		p(drag);
+		p(depthCollision);
+		p(vectorField);
+	};
+
+	RTTITypeBase* ParticleGpuSimulationSettings::getRTTIStatic()
+	{
+		return ParticleGpuSimulationSettingsRTTI::instance();
+	}
+
+	RTTITypeBase* ParticleGpuSimulationSettings::getRTTI() const
+	{
+		return getRTTIStatic();
 	}
 
 	ParticleSystem::ParticleSystem()
-		:mSortedEvolvers(&evolverCompareCallback)
 	{
 		mId = ParticleManager::instance().registerParticleSystem(this);
 		mSeed = rand();
+
+		auto emitter = bs_shared_ptr_new<ParticleEmitter>();
+
+		PARTICLE_SPHERE_SHAPE_DESC desc;
+		desc.radius = 0.05f;
+
+		emitter->setShape(ParticleEmitterSphereShape::create(desc));
+
+		mEmitters = { emitter };
 	}
 
 	ParticleSystem::~ParticleSystem()
@@ -47,38 +138,74 @@ namespace bs
 		if(mParticleSet)
 			bs_delete(mParticleSet);
 	}
-
-	void ParticleSystem::setManualSeed(UINT32 seed)
+		
+	void ParticleSystem::setSettings(const ParticleSystemSettings& settings)
 	{
-		mManualSeed = seed;
-
-		if(!mUseAutomaticSeed)
+		if(settings.useAutomaticSeed != mSettings.useAutomaticSeed)
 		{
-			mSeed = seed;
-			mRandom.setSeed(seed);
+			if(settings.useAutomaticSeed)
+				mSeed = rand();
+			else
+				mSeed = settings.manualSeed;
+
+			mRandom.setSeed(mSeed);
 		}
-	}
-
-	void ParticleSystem::setUseAutomaticSeed(bool enable)
-	{
-		if(mUseAutomaticSeed == enable)
-			return;
-
-		if(enable)
-			mSeed = rand();
 		else
-			mSeed = mManualSeed;
+		{
+			if(!settings.useAutomaticSeed)
+			{
+				mSeed = settings.manualSeed;
+				mRandom.setSeed(mSeed);
+			}
+		}
 
-		mRandom.setSeed(mSeed);
+		if(settings.maxParticles < mSettings.maxParticles)
+			mParticleSet->clear(settings.maxParticles);
+
+		mSettings = settings; 
+		_markCoreDirty();
 	}
 
-	void ParticleSystem::setMaxParticles(UINT32 value)
+	void ParticleSystem::setGpuSimulationSettings(const ParticleGpuSimulationSettings& settings)
 	{
-		if(mMaxParticles == value)
-			return;
+		mGpuSimulationSettings = settings;
+		_markCoreDirty();
+	}
 
-		mParticleSet->clear(value);
-		mMaxParticles = value;
+	void ParticleSystem::setLayer(UINT64 layer)
+	{
+		const bool isPow2 = layer && !((layer - 1) & layer);
+
+		if (!isPow2)
+		{
+			LOGWRN("Invalid layer provided. Only one layer bit may be set. Ignoring.");
+			return;
+		}
+
+		mLayer = layer;
+		_markCoreDirty();
+	}	
+
+	void ParticleSystem::setEmitters(const Vector<SPtr<ParticleEmitter>>& emitters)
+	{
+		mEmitters = emitters;
+		_markCoreDirty();
+	}
+
+	void ParticleSystem::setEvolvers(const Vector<SPtr<ParticleEvolver>>& evolvers)
+	{
+		mEvolvers = evolvers;
+
+		std::sort(mEvolvers.begin(), mEvolvers.end(), 
+			[](const SPtr<ParticleEvolver>& a, const SPtr<ParticleEvolver>& b)
+		{
+			if (a->getProperties().priority == b->getProperties().priority)
+				return a > b; // Use address, at this point it doesn't matter, but sorting requires us to differentiate
+			else
+				return a->getProperties().priority > b->getProperties().priority;
+		});
+
+		_markCoreDirty();
 	}
 
 	void ParticleSystem::play()
@@ -88,7 +215,7 @@ namespace bs
 
 		if(mState == State::Uninitialized)
 		{
-			UINT32 particleCapacity = std::min(mMaxParticles, INITIAL_PARTICLE_CAPACITY);
+			UINT32 particleCapacity = std::min(mSettings.maxParticles, INITIAL_PARTICLE_CAPACITY);
 			mParticleSet = bs_new<ParticleSet>(particleCapacity);
 		}
 
@@ -117,102 +244,137 @@ namespace bs
 		if(mState != State::Playing)
 			return;
 
-		float newTime = mTime;
-
-		float timeStep = timeDelta;
-		if(newTime >= mDuration)
-		{
-			if(mIsLooping)
-				newTime = fmod(newTime, mDuration);
-			else
-			{
-				timeStep = mTime - mDuration;
-				newTime = mDuration;
-			}
-		}
-		else
-			newTime += timeDelta;
+		float timeStep;
+		const float newTime = _advanceTime(mTime, timeDelta, mSettings.duration, mSettings.isLooping, timeStep);
 
 		if(timeStep < 0.00001f)
 			return;
 
-		// Spawn new particles
+		// Generate per-frame state
 		ParticleSystemState state;
-		state.time = newTime;
-		state.nrmTime = newTime / mDuration;
-		state.length = mDuration;
+		state.timeStart = mTime;
+		state.timeEnd = newTime;
+		state.nrmTimeStart = state.timeStart / mSettings.duration;
+		state.nrmTimeEnd = state.timeEnd / mSettings.duration;
+		state.length = mSettings.duration;
 		state.timeStep = timeStep;
-		state.maxParticles = mMaxParticles;
-		state.worldSpace = mSimulationSpace == ParticleSimulationSpace::World;
+		state.maxParticles = mSettings.maxParticles;
+		state.worldSpace = mSettings.simulationSpace == ParticleSimulationSpace::World;
+		state.gpuSimulated = mSettings.gpuSimulation;
 		state.localToWorld = mTransform.getMatrix();
 		state.worldToLocal = state.localToWorld.inverseAffine();
+		state.system = this;
+		state.scene = (mScene && mScene->isActive()) ? mScene.get() : gSceneManager().getMainScene().get();
 		state.animData = animData;
 
+		// For GPU simulation we only care about newly spawned particles, so clear old ones
+		if(mSettings.gpuSimulation)
+			mParticleSet->clear();
+
+		// Spawn new particles
 		for(auto& emitter : mEmitters)
-			emitter->spawn(mRandom, state, *mParticleSet);
+		{
+			if(emitter)
+				emitter->spawn(mRandom, state, *mParticleSet);
+		}
 
-		UINT32 numParticles = mParticleSet->getParticleCount();
+		// Simulate if running on CPU, otherwise just pass the spawned particles off to the core thread
+		if(!mSettings.gpuSimulation)
+		{
+			const UINT32 numParticles = mParticleSet->getParticleCount();
+
+			preSimulate(state, 0, numParticles, false, 0.0f);
+			simulate(state, 0, numParticles, false, 0.0f);
+			postSimulate(state, 0, numParticles, false, 0.0f);
+		}
+
+		mTime = newTime;
+	}
+
+	void ParticleSystem::preSimulate(const ParticleSystemState& state, UINT32 startIdx, UINT32 count, bool spacing, 
+		float spacingOffset)
+	{
 		const ParticleSetData& particles = mParticleSet->getParticles();
-
-		// Remember old positions
-		for(UINT32 i = 0; i < numParticles; i++)
-			particles.prevPosition[i] = particles.position[i];
-
-		// Apply gravity
-		if(mGravityScale != 0.0f)
-		{
-			// TODO - If the system is analytic don't apply gravity incrementally
-			Vector3 gravity = gPhysics().getGravity() * mGravityScale;
-
-			if(!state.worldSpace)
-				gravity = state.worldToLocal.multiplyDirection(gravity);
-
-			for (UINT32 i = 0; i < numParticles; i++)
-				particles.velocity[i] += gravity * timeStep;
-		}
-
-		// Evolve pre-simulation
-		auto evolverIter = mSortedEvolvers.begin();
-		for(; evolverIter != mSortedEvolvers.end(); ++evolverIter)
-		{
-			ParticleEvolver* evolver = *evolverIter;
-			if(evolver->getPriority() < 0)
-				break;
-
-			evolver->evolve(mRandom, state, *mParticleSet);
-		}
-
-		// Simulate
-		for(UINT32 i = 0; i < numParticles; i++)
-			particles.position[i] += particles.velocity[i] * timeStep;
-
-		// Evolve post-simulation
-		for(; evolverIter != mSortedEvolvers.end(); ++evolverIter)
-		{
-			ParticleEvolver* evolver = *evolverIter;
-			evolver->evolve(mRandom, state, *mParticleSet);
-		}
+		const float subFrameSpacing = (spacing && count > 0) ? 1.0f / count : 1.0f;
+		const UINT32 endIdx = startIdx + count;
 
 		// Decrement lifetime
-		for(UINT32 i = 0; i < numParticles; i++)
+		for (UINT32 i = startIdx; i < endIdx; i++)
+		{
+			float timeStep = state.timeStep;
+			if(spacing)
+			{
+				// Note: We're calculating this in a few places during a single frame. Store it and re-use?
+				const UINT32 localIdx = i - startIdx;
+				const float subFrameOffset = ((float)localIdx + spacingOffset) * subFrameSpacing;
+				timeStep *= subFrameOffset;
+			}
+
 			particles.lifetime[i] -= timeStep;
+		}
 
 		// Kill expired particles
-		for(UINT32 i = 0; i < numParticles;)
+		UINT32 numParticles = count;
+		for (UINT32 i = 0; i < numParticles;)
 		{
-			// TODO - Upon freeing a particle don't immediately remove it to save on swap, since we will be immediately
-			// spawning new particles. Perhaps keep a list of recently removed particles so it can immediately be
-			// re-used for spawn, and then only after spawn remove extra particles
-			if(particles.lifetime[i] <= 0.0f)
+			const UINT32 particleIdx = startIdx + i;
+			if (particles.lifetime[particleIdx] <= 0.0f)
 			{
-				mParticleSet->freeParticle(i);
+				mParticleSet->freeParticle(particleIdx);
 				numParticles--;
 			}
 			else
 				i++;
 		}
 
-		mTime = newTime;
+		// Remember old positions
+		for (UINT32 i = startIdx; i < endIdx; i++)
+			particles.prevPosition[i] = particles.position[i];
+
+		// Evolve pre-simulation
+		for(auto& evolver : mEvolvers)
+		{
+			const ParticleEvolverProperties& props = evolver->getProperties();
+			if (props.priority < 0)
+				break;
+
+			evolver->evolve(mRandom, state, *mParticleSet, startIdx, count, spacing, spacingOffset);
+		}
+	}
+
+	void ParticleSystem::simulate(const ParticleSystemState& state, UINT32 startIdx, UINT32 count, bool spacing, 
+		float spacingOffset)
+	{
+		const ParticleSetData& particles = mParticleSet->getParticles();
+		const float subFrameSpacing = (spacing && count > 0) ? 1.0f / count : 1.0f;
+		const UINT32 endIdx = startIdx + count;
+
+		for (UINT32 i = startIdx; i < endIdx; i++)
+		{
+			float timeStep = state.timeStep;
+			if(spacing)
+			{
+				const UINT32 localIdx = i - startIdx;
+				const float subFrameOffset = ((float)localIdx + spacingOffset) * subFrameSpacing;
+				timeStep *= subFrameOffset;
+			}
+
+			particles.position[i] += particles.velocity[i] * timeStep;
+		}
+	}
+
+	void ParticleSystem::postSimulate(const ParticleSystemState& state, UINT32 startIdx, UINT32 count, bool spacing, 
+		float spacingOffset)
+	{
+		// Evolve post-simulation
+		for(auto& evolver : mEvolvers)
+		{
+			const ParticleEvolverProperties& props = evolver->getProperties();
+			if(props.priority >= 0)
+				continue;
+
+			evolver->evolve(mRandom, state, *mParticleSet, startIdx, count, spacing, spacingOffset);
+		}
 	}
 
 	AABox ParticleSystem::_calculateBounds() const
@@ -230,6 +392,24 @@ namespace bs
 			bounds.merge(particles.position[i]);
 
 		return bounds;
+	}
+
+	float ParticleSystem::_advanceTime(float time, float timeDelta, float duration, bool loop, float& timeStep)
+	{
+		timeStep = timeDelta;
+		float newTime = time + timeStep;
+		if(newTime >= duration)
+		{
+			if(loop)
+				newTime = fmod(newTime, duration);
+			else
+			{
+				timeStep = time - duration;
+				newTime = duration;
+			}
+		}
+
+		return newTime;
 	}
 
 	SPtr<ct::ParticleSystem> ParticleSystem::getCore() const
@@ -253,34 +433,23 @@ namespace bs
 
 	CoreSyncData ParticleSystem::syncToCore(FrameAlloc* allocator)
 	{
-		const UINT32 size = 
-			getActorSyncDataSize() +
-			rttiGetElemSize(getCoreDirtyFlags()) +
-			rttiGetElemSize(mSimulationSpace) +
-			rttiGetElemSize(mOrientation) +
-			rttiGetElemSize(mOrientationPlane) +
-			rttiGetElemSize(mOrientationLockY) +
-			rttiGetElemSize(mSortMode) + 
-			sizeof(SPtr<ct::Material>);
+		UINT32 size = rttiGetElemSize(getCoreDirtyFlags());
+		size += coreSyncGetElemSize((SceneActor&)*this);
+		size += coreSyncGetElemSize(mSettings);
+		size += coreSyncGetElemSize(mGpuSimulationSettings);
+		size += rttiGetElemSize(mLayer);
 
 		UINT8* data = allocator->alloc(size);
 		char* dataPtr = (char*)data;
-		dataPtr = syncActorTo(dataPtr);
 		dataPtr = rttiWriteElem(getCoreDirtyFlags(), dataPtr);
-		dataPtr = rttiWriteElem(mSimulationSpace, dataPtr);
-		dataPtr = rttiWriteElem(mOrientation, dataPtr);
-		dataPtr = rttiWriteElem(mOrientationPlane, dataPtr);
-		dataPtr = rttiWriteElem(mOrientationLockY, dataPtr);
-		dataPtr = rttiWriteElem(mSortMode, dataPtr);
-
-		SPtr<ct::Material>* material = new (dataPtr) SPtr<ct::Material>();
-		if (mMaterial.isLoaded())
-			*material = mMaterial->getCore();
-
-		dataPtr += sizeof(SPtr<ct::Material>);
+		dataPtr = coreSyncWriteElem((SceneActor&)*this, dataPtr);
+		dataPtr = coreSyncWriteElem(mSettings, dataPtr);
+		dataPtr = coreSyncWriteElem(mGpuSimulationSettings, dataPtr);
+		dataPtr = rttiWriteElem(mLayer, dataPtr);
 
 		return CoreSyncData(data, size);
 	}
+
 	SPtr<ParticleSystem> ParticleSystem::create()
 	{
 		SPtr<ParticleSystem> ptr = createEmpty();
@@ -321,6 +490,20 @@ namespace bs
 			gRenderer()->notifyParticleSystemAdded(this);
 		}
 
+		void ParticleSystem::setLayer(UINT64 layer)
+		{
+			const bool isPow2 = layer && !((layer - 1) & layer);
+
+			if (!isPow2)
+			{
+				LOGWRN("Invalid layer provided. Only one layer bit may be set. Ignoring.");
+				return;
+			}
+
+			mLayer = layer;
+			_markCoreDirty();
+		}
+
 		void ParticleSystem::syncToCore(const CoreSyncData& data)
 		{
 			char* dataPtr = (char*)data.getBuffer();
@@ -328,19 +511,12 @@ namespace bs
 			UINT32 dirtyFlags = 0;
 			const bool oldIsActive = mActive;
 
-			dataPtr = syncActorFrom(dataPtr);
 			dataPtr = rttiReadElem(dirtyFlags, dataPtr);
-			dataPtr = rttiReadElem(mSimulationSpace, dataPtr);
-			dataPtr = rttiReadElem(mOrientation, dataPtr);
-			dataPtr = rttiReadElem(mOrientationPlane, dataPtr);
-			dataPtr = rttiReadElem(mOrientationLockY, dataPtr);
-			dataPtr = rttiReadElem(mSortMode, dataPtr);
-
-			SPtr<Material>* material = (SPtr<Material>*)dataPtr;
-			mMaterial = *material;
-			material->~SPtr<Material>();
-			dataPtr += sizeof(SPtr<Material>);
-
+			dataPtr = coreSyncReadElem((SceneActor&)*this, dataPtr);
+			dataPtr = coreSyncReadElem(mSettings, dataPtr);
+			dataPtr = coreSyncReadElem(mGpuSimulationSettings, dataPtr);
+			dataPtr = rttiReadElem(mLayer, dataPtr);
+			
 			constexpr UINT32 updateEverythingFlag = (UINT32)ActorDirtyFlag::Everything
 				| (UINT32)ActorDirtyFlag::Active
 				| (UINT32)ActorDirtyFlag::Dependency;
@@ -356,20 +532,12 @@ namespace bs
 				}
 				else
 				{
-					gRenderer()->notifyParticleSystemRemoved(this);
-					gRenderer()->notifyParticleSystemAdded(this);
+					if(mActive)
+						gRenderer()->notifyParticleSystemUpdated(this, false);
 				}
 			}
-			else if ((dirtyFlags & (UINT32)ActorDirtyFlag::Mobility) != 0)
-			{
-				gRenderer()->notifyParticleSystemRemoved(this);
-				gRenderer()->notifyParticleSystemAdded(this);
-			}
-			else if ((dirtyFlags & (UINT32)ActorDirtyFlag::Transform) != 0)
-			{
-				if (mActive)
-					gRenderer()->notifyParticleSystemUpdated(this);
-			}
+			else if ((dirtyFlags & ((UINT32)ActorDirtyFlag::Mobility | (UINT32)ActorDirtyFlag::Transform)) != 0)
+				gRenderer()->notifyParticleSystemUpdated(this, true);
 		}
 	}
 }

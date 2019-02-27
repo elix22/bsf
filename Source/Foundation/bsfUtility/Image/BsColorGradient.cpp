@@ -28,8 +28,10 @@ namespace bs
 		if(mDuration > 0.0f)
 			t = t / mDuration;
 
-		uint32_t time = Bitwise::unormToUint<16>(t);
-		time = Math::clamp(time, (uint32_t)mTimes[0], (uint32_t)mTimes[mNumKeys - 1]);
+		const uint32_t time = Bitwise::unormToUint<16>(Math::clamp01(t));
+
+		if(time < mTimes[0])
+			return mColors[0];
 
 		// Note: Add a version of evaluate that supports caching?
 		for(UINT32 i = 1; i < mNumKeys; i++)
@@ -46,7 +48,7 @@ namespace bs
 		return mColors[mNumKeys - 1];
 	}
 
-	void ColorGradient::setKeys(const Vector<ColorGradientKey>& keys)
+	void ColorGradient::setKeys(const Vector<ColorGradientKey>& keys, float duration)
 	{
 #if BS_DEBUG_MODE
 		// Ensure keys are sorted
@@ -67,23 +69,39 @@ namespace bs
 				toString(MAX_KEYS) + "). Keys will be ignored.");
 		}
 
-		if(!keys.empty())
-			mDuration = keys.back().time;
-		else
-			mDuration = 0.0f;
-
-
+		mDuration = duration;
 		mNumKeys = 0;
+
 		for(auto& key : keys)
 		{
 			if(mNumKeys >= MAX_KEYS)
 				break;
 
 			mColors[mNumKeys] = key.color.getAsRGBA();
-			mTimes[mNumKeys] = Bitwise::unormToUint<16>(key.time / mDuration);
+			mTimes[mNumKeys] = Bitwise::unormToUint<16>(Math::clamp01(key.time));
 
 			mNumKeys++;
 		}
+	}
+
+	Vector<ColorGradientKey> ColorGradient::getKeys() const
+	{
+		Vector<ColorGradientKey> output(mNumKeys);
+		for(UINT32 i = 0; i < mNumKeys; i++)
+		{
+			output[i].color = Color::fromRGBA(mColors[i]);
+			output[i].time = Bitwise::uintToUnorm<16>(mTimes[i]);
+		}
+
+		return output;
+	}
+
+	ColorGradientKey ColorGradient::getKey(UINT32 idx) const
+	{
+		if(idx >= mNumKeys)
+			return ColorGradientKey(Color::Black, 0.0f);
+
+		return ColorGradientKey(Color::fromRGBA(mColors[idx]), Bitwise::uintToUnorm<16>(mTimes[idx]));
 	}
 
 	void ColorGradient::setConstant(const Color& color)
@@ -92,5 +110,36 @@ namespace bs
 		mTimes[0] = 0;
 		mNumKeys = 1;
 		mDuration = 0.0f;
+	}
+
+	std::pair<float, float> ColorGradient::getTimeRange() const
+	{
+		if(mNumKeys == 0)
+			return std::make_pair(0.0f, 0.0f);
+
+		if(mNumKeys == 1)
+		{
+			float time = Bitwise::uintToUnorm<16>(mTimes[0]);
+			return std::make_pair(time, time);
+		}
+
+		return std::make_pair(
+			Bitwise::uintToUnorm<16>(mTimes[0]), 
+			Bitwise::uintToUnorm<16>(mTimes[mNumKeys - 1])
+		);
+	}
+
+	bool ColorGradient::operator== (const ColorGradient& rhs) const
+	{
+		if (mNumKeys != rhs.mNumKeys || mDuration != rhs.mDuration)
+			return false;
+
+		for (uint32_t i = 0; i < mNumKeys; i++)
+		{
+			if (mColors[i] != rhs.mColors[i] || mTimes[i] != rhs.mTimes[i])
+				return false;
+		}
+
+		return true;
 	}
 }

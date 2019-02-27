@@ -10,14 +10,6 @@
 
 namespace bs 
 {
-	HardwareBufferManager::HardwareBufferManager()
-	{
-	}
-
-	HardwareBufferManager::~HardwareBufferManager()
-	{
-	}
-
 	SPtr<VertexDeclaration> HardwareBufferManager::createVertexDeclaration(const SPtr<VertexDataDesc>& desc)
 	{
 		VertexDeclaration* decl = new (bs_alloc<VertexDeclaration>()) VertexDeclaration(desc->createElements());
@@ -46,7 +38,7 @@ namespace bs
 
 	}
 
-	SPtr<GpuParamBlockBuffer> HardwareBufferManager::createGpuParamBlockBuffer(UINT32 size, GpuParamBlockUsage usage)
+	SPtr<GpuParamBlockBuffer> HardwareBufferManager::createGpuParamBlockBuffer(UINT32 size, GpuBufferUsage usage)
 	{
 		SPtr<GpuParamBlockBuffer> paramBlockPtr = bs_core_ptr<GpuParamBlockBuffer>(new (bs_alloc<GpuParamBlockBuffer>()) GpuParamBlockBuffer(size, usage));
 		paramBlockPtr->_setThisPtr(paramBlockPtr);
@@ -85,7 +77,7 @@ namespace bs
 	{
 		size_t hash = 0;
 		for(auto& entry : v.elements)
-			hash_combine(hash, VertexElement::getHash(entry));
+			bs_hash_combine(hash, VertexElement::getHash(entry));
 
 		return hash;
 	}
@@ -162,7 +154,7 @@ namespace bs
 	}
 
 	SPtr<GpuParamBlockBuffer> HardwareBufferManager::createGpuParamBlockBuffer(UINT32 size, 
-		GpuParamBlockUsage usage, GpuDeviceFlags deviceMask)
+		GpuBufferUsage usage, GpuDeviceFlags deviceMask)
 	{
 		SPtr<GpuParamBlockBuffer> paramBlockPtr = createGpuParamBlockBufferInternal(size, usage, deviceMask);
 		paramBlockPtr->initialize();
@@ -174,6 +166,15 @@ namespace bs
 		GpuDeviceFlags deviceMask)
 	{
 		SPtr<GpuBuffer> gbuf = createGpuBufferInternal(desc, deviceMask);
+		gbuf->initialize();
+
+		return gbuf;
+	}
+
+	SPtr<GpuBuffer> HardwareBufferManager::createGpuBuffer(const GPU_BUFFER_DESC& desc, 
+		SPtr<HardwareBuffer> underlyingBuffer)
+	{
+		SPtr<GpuBuffer> gbuf = createGpuBufferInternal(desc, std::move(underlyingBuffer));
 		gbuf->initialize();
 
 		return gbuf;

@@ -95,9 +95,6 @@ namespace bs
 	class ISerializable;
 	class SerializableType;
 
-	typedef List<SPtr<DataStream>> DataStreamList;
-	typedef SPtr<DataStreamList> DataStreamListPtr;
-
 	enum TypeID_Utility
 	{
 		TID_Abstract = 50, // Special type ID used for Abstract classes. Only type ID that may be used by more than one class.
@@ -121,6 +118,7 @@ namespace bs
 		TID_Flags = 68,
 		TID_IReflectable = 69,
 		TID_DataBlob = 70,
-		TID_ColorGradient = 71
+		TID_ColorGradient = 71,
+		TID_SerializationContext = 72
 	};
 }

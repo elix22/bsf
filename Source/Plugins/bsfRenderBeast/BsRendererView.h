@@ -14,6 +14,7 @@
 #include "BsRendererRenderable.h"
 #include "BsRenderCompositor.h"
 #include "BsRendererParticles.h"
+#include "BsRendererDecal.h"
 
 namespace bs { namespace ct
 {
@@ -40,6 +41,7 @@ namespace bs { namespace ct
 		BS_PARAM_BLOCK_ENTRY(Vector2, gNearFar)
 		BS_PARAM_BLOCK_ENTRY(Vector4I, gViewportRectangle)
 		BS_PARAM_BLOCK_ENTRY(Vector4, gClipToUVScaleOffset)
+		BS_PARAM_BLOCK_ENTRY(Vector4, gUVToClipScaleOffset)
 		BS_PARAM_BLOCK_ENTRY(float, gAmbientFactor)
 	BS_PARAM_BLOCK_END
 
@@ -61,7 +63,7 @@ namespace bs { namespace ct
 		static const ShaderVariation& getVariation()
 		{
 			static ShaderVariation variation = ShaderVariation(
-			Vector<ShaderVariation::Param>{
+			{
 				ShaderVariation::Param("SOLID_COLOR", color)
 			});
 
@@ -98,6 +100,12 @@ namespace bs { namespace ct
 		float nearPlane;
 		float farPlane;
 		ProjectionType projType;
+
+		/** 
+		 * Determines does this view output to the final render target. If false the view is usually used for some
+		 * sort of helper rendering.
+		 */
+		bool mainView;
 
 		/** 
 		 * When enabled, renderer extension callbacks will be triggered, allowing other systems to inject their own 
@@ -174,17 +182,9 @@ namespace bs { namespace ct
 
 		Matrix4 viewProjTransform;
 		Matrix4 prevViewProjTransform;
-
-		SPtr<RenderTarget> target;
-		Rect2I viewRect;
-		Rect2 nrmViewRect;
-		UINT32 numSamples;
 		UINT32 frameIdx;
 
-		UINT32 clearFlags;
-		Color clearColor;
-		float clearDepthValue;
-		UINT16 clearStencilValue;
+		RendererViewTargetData target;
 	};
 
 	/** Information whether certain scene objects are visible in a view, per object type. */
@@ -195,17 +195,19 @@ namespace bs { namespace ct
 		Vector<bool> spotLights;
 		Vector<bool> reflProbes;
 		Vector<bool> particleSystems;
+		Vector<bool> decals;
 	};
 
 	/** Information used for culling an object against a view. */
 	struct CullInfo
 	{
-		CullInfo(const Bounds& bounds, UINT64 layer = -1)
-			:bounds(bounds), layer(layer)
+		CullInfo(const Bounds& bounds, UINT64 layer = -1, float cullDistanceFactor = 1.0f)
+			:layer(layer), bounds(bounds), cullDistanceFactor(cullDistanceFactor)
 		{ }
 
-		Bounds bounds;
 		UINT64 layer;
+		Bounds bounds;
+		float cullDistanceFactor;
 	};
 
 	/**	Renderer information specific to a single render target. */
@@ -261,6 +263,12 @@ namespace bs { namespace ct
 		 */
 		const SPtr<RenderQueue>& getTransparentQueue() const { return mTransparentQueue; }
 
+		/** 
+		 * Returns a render queue containing all decal renderable objects. Make sure to call determineVisible() beforehand 
+		 * if view or object transforms changed since the last time it was called. 
+		 */
+		const SPtr<RenderQueue>& getDecalQueue() const { return mDecalQueue; }
+		
 		/** Returns the compositor in charge of rendering for this view. */
 		const RenderCompositor& getCompositor() const { return mCompositor; }
 
@@ -285,8 +293,8 @@ namespace bs { namespace ct
 		 * Populates view render queues by determining visible particle systems. 
 		 *
 		 * @param[in]	particleSystems		A set of particle systems to iterate over and determine visibility for.
-		 * @param[in]	bounds				A set of world bounds for the particle systems. Must be the same size as the
-		 *									@p particleSystems array.
+		 * @param[in]	cullInfos			A set of world bounds & other information relevant for culling the provided
+		 *									renderable objects. Must be the same size as the @p particleSystems array.
 		 * @param[out]	visibility			Output parameter that will have the true bit set for any visible particle system
 		 *									object. If the bit for an object is already set to true, the method will never
 		 *									change it to false which allows the same bitfield to be provided to multiple
@@ -295,7 +303,24 @@ namespace bs { namespace ct
 		 *									As a side-effect, per-view visibility data is also calculated and can be
 		 *									retrieved by calling getVisibilityMask().
 		 */
-		void determineVisible(const Vector<RendererParticles>& particleSystems, const Vector<AABox>& bounds,
+		void determineVisible(const Vector<RendererParticles>& particleSystems, const Vector<CullInfo>& cullInfos,
+			Vector<bool>* visibility = nullptr);
+
+		/**
+		 * Populates view render queues by determining visible decals. 
+		 *
+		 * @param[in]	decals				A set of decals to iterate over and determine visibility for.
+		 * @param[in]	cullInfos			A set of world bounds & other information relevant for culling the provided
+		 *									renderable objects. Must be the same size as the @p decals array.
+		 * @param[out]	visibility			Output parameter that will have the true bit set for any visible decal
+		 *									object. If the bit for an object is already set to true, the method will never
+		 *									change it to false which allows the same bitfield to be provided to multiple
+		 *									renderer views. Must be the same size as the @p decals array.
+		 *									
+		 *									As a side-effect, per-view visibility data is also calculated and can be
+		 *									retrieved by calling getVisibilityMask().
+		 */
+		void determineVisible(const Vector<RendererDecal>& decals, const Vector<CullInfo>& cullInfos,
 			Vector<bool>* visibility = nullptr);
 
 		/**
@@ -409,12 +434,12 @@ namespace bs { namespace ct
 		static Vector2 getNDCZToDeviceZ();
 	private:
 		RendererViewProperties mProperties;
-		RENDERER_VIEW_TARGET_DESC mTargetDesc;
 		Camera* mCamera;
 
 		SPtr<RenderQueue> mDeferredOpaqueQueue;
 		SPtr<RenderQueue> mForwardOpaqueQueue;
 		SPtr<RenderQueue> mTransparentQueue;
+		SPtr<RenderQueue> mDecalQueue;
 
 		RenderCompositor mCompositor;
 		SPtr<RenderSettings> mRenderSettings;
@@ -430,8 +455,7 @@ namespace bs { namespace ct
 	class RendererViewGroup
 	{
 	public:
-		RendererViewGroup();
-		RendererViewGroup(RendererView** views, UINT32 numViews, UINT32 shadowMapSize);
+		RendererViewGroup(RendererView** views, UINT32 numViews, bool mainPass, UINT32 shadowMapSize = 2048);
 
 		/** 
 		 * Updates the internal list of views. This is more efficient than always constructing a new instance of this class
@@ -444,6 +468,9 @@ namespace bs { namespace ct
 
 		/** Returns the total number of views in the group. */
 		UINT32 getNumViews() const { return (UINT32)mViews.size(); }
+
+		/** Determines is this the primary rendering pass for this frame. There can only be one primary pass per frame. */
+		bool isMainPass() const { return mIsMainPass; }
 
 		/** 
 		 * Returns information about visibility of various scene objects, from the perspective of all the views in the 
@@ -480,6 +507,7 @@ namespace bs { namespace ct
 	private:
 		Vector<RendererView*> mViews;
 		VisibilityInfo mVisibility;
+		bool mIsMainPass = false;
 
 		VisibleLightData mVisibleLightData;
 		VisibleReflProbeData mVisibleReflProbeData;

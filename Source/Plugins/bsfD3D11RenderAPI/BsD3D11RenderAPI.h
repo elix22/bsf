@@ -95,9 +95,6 @@ namespace bs { namespace ct
 		/** @copydoc RenderAPI::convertProjectionMatrix */
 		void convertProjectionMatrix(const Matrix4& matrix, Matrix4& dest) override;
 
-		/** @copydoc RenderAPI::getAPIInfo */
-		const RenderAPIInfo& getAPIInfo() const override;
-
 		/** @copydoc RenderAPI::generateParamBlockDesc() */
 		GpuParamBlockDesc generateParamBlockDesc(const String& name, Vector<GpuParamDataDesc>& params) override;
 
@@ -115,7 +112,7 @@ namespace bs { namespace ct
 		void determineMultisampleSettings(UINT32 multisampleCount, DXGI_FORMAT format, DXGI_SAMPLE_DESC* outputSampleDesc);
 
 		/**	Returns the main DXGI factory object. */
-		IDXGIFactory* getDXGIFactory() const { return mDXGIFactory; }
+		IDXGIFactory1* getDXGIFactory() const { return mDXGIFactory; }
 
 		/**	Returns the primary DX11 device object. */
 		D3D11Device& getPrimaryDevice() const { return *mDevice; }
@@ -152,7 +149,7 @@ namespace bs { namespace ct
 		void initCapabilites(IDXGIAdapter* adapter, RenderAPICapabilities& caps) const;
 
 	private:
-		IDXGIFactory* mDXGIFactory;
+		IDXGIFactory1* mDXGIFactory;
 		D3D11Device* mDevice;
 
 		D3D11DriverList* mDriverList;

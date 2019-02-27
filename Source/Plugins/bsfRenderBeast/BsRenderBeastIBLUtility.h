@@ -6,7 +6,7 @@
 #include "Renderer/BsIBLUtility.h"
 #include "Renderer/BsRendererMaterial.h"
 #include "Renderer/BsParamBlocks.h"
-#include "Utility/BsGpuResourcePool.h"
+#include "Renderer/BsGpuResourcePool.h"
 
 namespace bs { namespace ct
 {
@@ -124,7 +124,7 @@ namespace bs { namespace ct
 		static const ShaderVariation& getVariation()
 		{
 			static ShaderVariation variation = ShaderVariation(
-			Vector<ShaderVariation::Param>{
+			{
 				ShaderVariation::Param("SH_ORDER", shOrder)
 			});
 
@@ -177,7 +177,7 @@ namespace bs { namespace ct
 		static const ShaderVariation& getVariation()
 		{
 			static ShaderVariation variation = ShaderVariation(
-			Vector<ShaderVariation::Param>{
+			{
 				ShaderVariation::Param("SH_ORDER", shOrder)
 			});
 

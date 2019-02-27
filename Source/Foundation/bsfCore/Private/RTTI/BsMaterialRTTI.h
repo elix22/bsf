@@ -20,7 +20,7 @@ namespace bs
 		void setShader(Material* obj, HShader& val) { obj->mShader = val; }
 
 		SPtr<MaterialParams> getMaterialParams(Material* obj) { return obj->mParams; }
-		void setMaterialParams(Material* obj, SPtr<MaterialParams> value) { obj->mRTTIData = value; }
+		void setMaterialParams(Material* obj, SPtr<MaterialParams> value) { mMatParams = value; }
 
 	public:
 		MaterialRTTI()
@@ -29,7 +29,7 @@ namespace bs
 			addReflectablePtrField("mMaterialParams", 2, &MaterialRTTI::getMaterialParams, &MaterialRTTI::setMaterialParams);
 		}
 
-		void onDeserializationEnded(IReflectable* obj, const UnorderedMap<String, UINT64>& params) override;
+		void onDeserializationEnded(IReflectable* obj, SerializationContext* context) override;
 
 		const String& getRTTIName() override
 		{
@@ -43,6 +43,9 @@ namespace bs
 		}
 
 		SPtr<IReflectable> newRTTIObject() override;
+
+	private:
+		SPtr<MaterialParams> mMatParams;
 	};
 
 	/** @} */

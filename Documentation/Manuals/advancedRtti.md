@@ -230,12 +230,13 @@ bs_free(data);
 ~~~~~~~~~~~~~
 
 # Querying RTTI {#advancedRtti_c}
-Aside from using RTTI for serialization, you can also use it to manually query various information about objects. 
+Aside from using RTTI for serialization, you can also use it to manually query various information about objects, as well as create and cast object instances. 
 
 Global queries:
  - @ref bs::rtti_is_of_type "rtti_is_of_type<T>()" - Checks is a specific object of type *T*
  - @ref bs::rtti_is_subclass "rtti_is_subclass<T>()" - Checks is a specific object derived from type *T*
  - @ref bs::rtti_create "rtti_create()" - Creates a new object from its type ID
+ - @ref bs::rtti_cast "rtti_cast<T>()" - Casts an object to the specified type if the cast is valid, or returns null otherwise
  
 **IReflectable** queries:
  - @ref bs::IReflectable::getTypeName "IReflectable::getTypeName()" - Gets the name of the object's type
@@ -260,6 +261,7 @@ IReflectable* myObject = ...;
 rtti_is_of_type<Texture>(myObject);
 rtti_is_subclass<Texture>(myObject);
 rtti_create(TID_Texture);
+Texture* myTexture = rtti_cast<Texture>(myObject);
 
 myObject->getTypeName();
 myObject->getTypeId();
@@ -286,4 +288,51 @@ When implementing **RTTIType<Type, BaseType, MyRTTIType>** can optionally overri
  - @ref bs::RTTIType<Type, BaseType, MyRTTIType>::onDeserializationStarted "RTTIType::onDeserializationStarted"
  - @ref bs::RTTIType<Type, BaseType, MyRTTIType>::onDeserializationEnded "RTTIType::onDeserializationEnded"
  
-As their names imply they will get called during serialization/deserialization and allow you to do any pre- or post-processing of the data. Each of those methods accepts an **IReflectable** pointer to the object currently being processed. Each type that implements **IReflectable** also comes with a *mRTTIData* field which is of **Any** type, and can be used for storing temporary data during serialization/deserialization (primarily when using the methods above).
+As their names imply they will get called during serialization/deserialization and allow you to do any pre- or post-processing of the data. Each of those methods accepts an **IReflectable** pointer to the object currently being processed. 
+
+During the calls to those methods, as well as any field getter/setter methods, your instance of the **RTTIType** object is guaranteed to be unique for the instance of the **IReflectable** object it is processing. This means you may use object for temporary data storage during serialization/deserialization.
+
+```
+// RTTI for a Texture class that requires special initialization and checking after
+// deserialization ends
+class BS_CORE_EXPORT TextureRTTI : public RTTIType<Texture, Resource, TextureRTTI>
+{
+private:
+
+	// The setter doesn't write to Texture directly, instead it just stores the
+	// data in temporary field
+	void setPixelData(Texture* obj, SPtr<PixelData> data) { mPixelData = data; }
+	
+	SPtr<PixelData> getPixelData(Texture* obj) { /* Not relevant */ return ...; };	
+
+public:
+	TextureRTTI()
+	{
+		addReflectablePtrField("mPixelData", 0, 
+			&TextureRTTI::getPixelData, &TextureRTTI::setPixelData);
+	}
+
+	void onDeserializationEnded(IReflectable* obj, SerializationContext* context) override
+	{
+		Texture* texture = static_cast<Texture*>(obj);
+		
+		// Initialize the texture now that all fields have been deserialized
+		texture->initialize();
+		
+		// Check if the pixel data matches our texture and write the data from
+		// our temporary field
+		
+		// Do the checks
+		...
+		
+		texture->writeData(mPixelData);
+	}
+
+	// RTTIType boilerplate (name, id, newRTTIObject)
+	...
+	
+private:
+	// Temporary storage to be used during deserialization
+	SPtr<PixelData> mPixelData;
+};
+```

@@ -13,27 +13,23 @@ namespace bs
 	 *  @{
 	 */
 
-	template<bool Core> struct TGpuParamsType { };
-	template<> struct TGpuParamsType<false> { typedef GpuParams Type; };
-	template<> struct TGpuParamsType<true> { typedef ct::GpuParams Type; };
-
 	/** Contains a set of GpuParams used for a single technique within a Material. */
 	template<bool Core>
 	class BS_CORE_EXPORT TGpuParamsSet
 	{
-		typedef typename TGpuParamsType<Core>::Type GpuParamsType;
-		typedef typename TMaterialParamsType<Core>::Type MaterialParamsType;
-		typedef typename TGpuParamBlockBufferPtrType<Core>::Type ParamBlockPtrType;
-		typedef typename TTechniqueType<Core>::Type TechniqueType;
-		typedef typename TShaderType<Core>::Type ShaderType;
-		typedef typename TPassType<Core>::Type PassType;
-		typedef typename TGpuProgramType<Core>::Type GpuProgramPtrType;
-		typedef typename TGpuParamBlockBufferType<Core>::Type ParamBlockType;
-		typedef typename TGpuParamTextureType<Core>::Type TextureType;
-		typedef typename TGpuBufferType<Core>::Type BufferType;
-		typedef typename TGpuParamSamplerStateType<Core>::Type SamplerStateType;
-		typedef typename TPassTypes<Core>::GraphicsPipelineStateType GraphicsPipelineStateType;
-		typedef typename TPassTypes<Core>::ComputePipelineStateType ComputePipelineStateType;
+		using GpuParamsType = CoreVariantType<GpuParams, Core>;
+		using MaterialParamsType = CoreVariantType<MaterialParams, Core>;
+		using ParamBlockPtrType = SPtr<CoreVariantType<GpuParamBlockBuffer, Core>>;
+		using TechniqueType = CoreVariantType<Technique, Core>;
+		using ShaderType = CoreVariantHandleType<Shader, Core>;
+		using PassType = CoreVariantType<Pass, Core>;
+		using GpuProgramPtrType = SPtr<CoreVariantType<GpuProgram, Core>>;
+		using ParamBlockType = CoreVariantType<GpuParamBlockBuffer, Core>;
+		using TextureType = CoreVariantHandleType<Texture, Core>;
+		using BufferType = SPtr<CoreVariantType<GpuBuffer, Core>>;
+		using SamplerStateType = SPtr<CoreVariantType<SamplerState, Core>>;
+		using GraphicsPipelineStateType = CoreVariantType<GraphicsPipelineState, Core>;
+		using ComputePipelineStateType = CoreVariantType<ComputePipelineState, Core>;
 
 		/** Binding location for a single GPU param block buffer. */
 		struct BlockBinding
@@ -73,6 +69,7 @@ namespace bs
 			UINT32 paramIdx;
 			UINT32 blockIdx;
 			UINT32 offset;
+			UINT32 arrayStride;
 		};
 
 		/** Information about how an object parameter maps from a material parameter to a GPU stage slot. */
@@ -103,7 +100,7 @@ namespace bs
 		};
 
 	public:
-		TGpuParamsSet() {}
+		TGpuParamsSet() = default;
 		TGpuParamsSet(const SPtr<TechniqueType>& technique, const ShaderType& shader,
 			const SPtr<MaterialParamsType>& params);
 		~TGpuParamsSet();
@@ -187,7 +184,7 @@ namespace bs
 	class BS_CORE_EXPORT GpuParamsSet : public TGpuParamsSet<false>
 	{
 	public:
-		GpuParamsSet() { }
+		GpuParamsSet() = default;
 		GpuParamsSet(const SPtr<Technique>& technique, const HShader& shader, 
 			const SPtr<MaterialParams>& params)
 			:TGpuParamsSet(technique, shader, params)
@@ -200,7 +197,7 @@ namespace bs
 	class BS_CORE_EXPORT GpuParamsSet : public TGpuParamsSet<true>
 	{
 	public:
-		GpuParamsSet() { }
+		GpuParamsSet() = default;
 		GpuParamsSet(const SPtr<Technique>& technique, const SPtr<Shader>& shader,
 			const SPtr<MaterialParams>& params)
 			:TGpuParamsSet(technique, shader, params)

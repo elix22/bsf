@@ -14,6 +14,8 @@
 
 namespace bs
 {
+	class SceneInstance;
+
 	/** @addtogroup Scene
 	 *  @{
 	 */
@@ -165,10 +167,8 @@ namespace bs
 		 * and returns a handle to the object.
 		 *			
 		 * @param[in]	soPtr		Pointer to the scene object register and return a handle to.
-		 * @param[in]	originalId	If the provided pointer was deserialized, this is the original object's ID at the time
-		 * 							of serialization. Used for resolving handles pointing to the object.
 		 */
-		static HSceneObject createInternal(const SPtr<SceneObject>& soPtr, UINT64 originalId = 0);
+		static HSceneObject createInternal(const SPtr<SceneObject>& soPtr);
 
 		/**
 		 * Destroys this object and any of its held components.
@@ -188,7 +188,7 @@ namespace bs
 		HSceneObject mThisHandle;
 		UUID mPrefabLinkUUID;
 		SPtr<PrefabDiff> mPrefabDiff;
-		UINT32 mPrefabHash;
+		UINT32 mPrefabHash = 0;
 		UINT32 mFlags;
 
 		/************************************************************************/
@@ -307,11 +307,11 @@ namespace bs
 		Transform mLocalTfrm;
 		mutable Transform mWorldTfrm;
 
-		mutable Matrix4 mCachedLocalTfrm;
-		mutable Matrix4 mCachedWorldTfrm;
+		mutable Matrix4 mCachedLocalTfrm = Matrix4::IDENTITY;
+		mutable Matrix4 mCachedWorldTfrm = Matrix4::IDENTITY;
 
-		mutable UINT32 mDirtyFlags;
-		mutable UINT32 mDirtyHash;
+		mutable UINT32 mDirtyFlags = 0xFFFFFFFF;
+		mutable UINT32 mDirtyHash = 0;
 
 		/** 
 		 * Notifies components and child scene object that a transform has been changed.  
@@ -375,6 +375,9 @@ namespace bs
 
 		/**	Gets the number of all child GameObjects. */
 		UINT32 getNumChildren() const { return (UINT32)mChildren.size(); }
+
+		/** Returns the scene this object is part of. Can be null if scene object hasn't been instantiated. */
+		const SPtr<SceneInstance>& getScene() const;
 
 		/** 
 		 * Searches the scene object hierarchy to find a child scene object using the provided path.
@@ -440,11 +443,12 @@ namespace bs
 		HSceneObject clone(bool instantiate = true);
 
 	private:
+		SPtr<SceneInstance> mParentScene;
 		HSceneObject mParent;
 		Vector<HSceneObject> mChildren;
-		bool mActiveSelf;
-		bool mActiveHierarchy;
-		ObjectMobility mMobility;
+		bool mActiveSelf = true;
+		bool mActiveHierarchy = true;
+		ObjectMobility mMobility = ObjectMobility::Movable;
 
 		/**
 		 * Internal version of setParent() that allows you to set a null parent.
@@ -454,6 +458,9 @@ namespace bs
 		 *									changed (this means the local transform will be modified accordingly).
 		 */
 		void _setParent(const HSceneObject& parent, bool keepWorldTransform = true);
+
+		/** Changes the owning scene of the scene object and all children. */
+		void setScene(const SPtr<SceneInstance>& scene);
 
 		/**
 		 * Adds a child to the child array. This method doesn't check for null or duplicate values.

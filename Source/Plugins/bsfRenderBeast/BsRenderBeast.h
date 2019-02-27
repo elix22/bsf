@@ -41,7 +41,7 @@ namespace bs
 	};
 
 	/**
-	 * Default renderer for Banshee. Performs frustum culling, sorting and renders all scene objects while applying
+	 * Default framework renderer. Performs frustum culling, sorting and renders all scene objects while applying
 	 * lighting, shadowing, special effects and post-processing.
 	 */
 	class RenderBeast : public Renderer
@@ -55,7 +55,7 @@ namespace bs
 
 	public:
 		RenderBeast();
-		~RenderBeast() { }
+		~RenderBeast() = default;
 
 		/** @copydoc Renderer::getName */
 		const StringID& getName() const override;
@@ -144,10 +144,19 @@ namespace bs
 		void notifyParticleSystemAdded(ParticleSystem* particleSystem) override;
 
 		/** @copydoc Renderer::notifyParticleSystemUpdated */
-		void notifyParticleSystemUpdated(ParticleSystem* particleSystem) override;
+		void notifyParticleSystemUpdated(ParticleSystem* particleSystem, bool tfrmOnly) override;
 
 		/** @copydoc Renderer::notifyParticleSystemRemoved */
 		void notifyParticleSystemRemoved(ParticleSystem* particleSystem) override;
+
+		/** @copydoc Renderer::notifyDecalAdded */
+		void notifyDecalAdded(Decal* decal) override;
+
+		/** @copydoc Renderer::notifyDecalUpdated */
+		void notifyDecalUpdated(Decal* decal) override;
+
+		/** @copydoc Renderer::notifyDecalRemoved */
+		void notifyDecalRemoved(Decal* decal) override;
 
 		/**
 		 * Updates the render options on the core thread.

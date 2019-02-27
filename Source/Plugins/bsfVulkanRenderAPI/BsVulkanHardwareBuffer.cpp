@@ -10,9 +10,9 @@
 
 namespace bs { namespace ct
 {
-	VulkanBuffer::VulkanBuffer(VulkanResourceManager* owner, VkBuffer buffer, VkBufferView view, VmaAllocation allocation,
-							   UINT32 rowPitch, UINT32 slicePitch)
-		: VulkanResource(owner, false), mBuffer(buffer), mView(view), mAllocation(allocation), mRowPitch(rowPitch)
+	VulkanBuffer::VulkanBuffer(VulkanResourceManager* owner, VkBuffer buffer, VmaAllocation allocation, UINT32 rowPitch
+		, UINT32 slicePitch)
+		: VulkanResource(owner, false), mBuffer(buffer), mAllocation(allocation), mRowPitch(rowPitch)
 	{
 		if (rowPitch != 0)
 			mSliceHeight = slicePitch / rowPitch;
@@ -24,8 +24,8 @@ namespace bs { namespace ct
 	{
 		VulkanDevice& device = mOwner->getDevice();
 
-		if (mView != VK_NULL_HANDLE)
-			vkDestroyBufferView(device.getLogical(), mView, gVulkanAllocator);
+		for(auto& entry : mViews)
+			vkDestroyBufferView(device.getLogical(), entry.view, gVulkanAllocator);
 
 		vkDestroyBuffer(device.getLogical(), mBuffer, gVulkanAllocator);
 		device.freeMemory(mAllocation);
@@ -89,33 +89,125 @@ namespace bs { namespace ct
 		vkCmdUpdateBuffer(cb->getHandle(), mBuffer, offset, length, (uint32_t*)data);
 	}
 
+	void VulkanBuffer::notifyDone(UINT32 globalQueueIdx, VulkanAccessFlags useFlags)
+	{
+		{
+			Lock lock(mMutex);
+
+			// Note: With often used buffers this block might never execute, in which case views won't  get freed.
+			// If that ever becomes an issue (unlikely) then we'll need to track usage per-view.
+			bool isLastHandle = mNumBoundHandles == 1;
+			if (isLastHandle)
+				destroyUnusedViews();
+		}
+
+		VulkanResource::notifyDone(globalQueueIdx, useFlags);
+	}
+
+	void VulkanBuffer::notifyUnbound()
+	{
+		{
+			Lock lock(mMutex);
+
+			// Note: With often used buffers this block might never execute, in which case views won't  get freed.
+			// If that ever becomes an issue (unlikely) then we'll need to track usage per-view.
+			bool isLastHandle = mNumBoundHandles == 1;
+			if (isLastHandle)
+				destroyUnusedViews();
+		}
+
+		VulkanResource::notifyUnbound();
+	}
+
+	VkBufferView VulkanBuffer::createView(VkFormat format)
+	{
+		const auto iterFind = std::find_if(mViews.begin(), mViews.end(), 
+			[format](const ViewInfo& x) { return x.format == format; });
+
+		if(iterFind != mViews.end())
+		{
+			iterFind->useCount++;
+			return iterFind->view;
+		}
+
+		VkBufferViewCreateInfo viewCI;
+		viewCI.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
+		viewCI.pNext = nullptr;
+		viewCI.flags = 0;
+		viewCI.offset = 0;
+		viewCI.range = VK_WHOLE_SIZE;
+		viewCI.format = format;
+		viewCI.buffer = mBuffer;
+
+		VkBufferView view;
+		VkResult result = vkCreateBufferView(getDevice().getLogical(), &viewCI, gVulkanAllocator, &view);
+		assert(result == VK_SUCCESS);
+
+		mViews.push_back(ViewInfo(format, view));
+		return view;
+	}
+
+	void VulkanBuffer::freeView(VkBufferView view)
+	{
+		const auto iterFind = std::find_if(mViews.begin(), mViews.end(), 
+			[view](const ViewInfo& x) { return x.view == view; });
+
+		if(iterFind != mViews.end())
+		{
+			assert(iterFind->useCount > 0);
+			iterFind->useCount--;
+		}
+		else
+		{
+			assert(false);
+		}
+	}
+	
+	void VulkanBuffer::destroyUnusedViews()
+	{
+		for(auto iter = mViews.begin(); iter != mViews.end();)
+		{
+			if(iter->useCount == 0)
+			{
+				vkDestroyBufferView(getDevice().getLogical(), iter->view, gVulkanAllocator);
+				iter = mViews.erase(iter);
+			}
+			else
+				++iter;
+		}
+	}
+
 	VulkanHardwareBuffer::VulkanHardwareBuffer(BufferType type, GpuBufferFormat format, GpuBufferUsage usage, 
 		UINT32 size, GpuDeviceFlags deviceMask)
-		: HardwareBuffer(size), mBuffers(), mStagingBuffer(nullptr), mStagingMemory(nullptr), mMappedDeviceIdx(-1)
-		, mMappedGlobalQueueIdx(-1), mMappedOffset(0), mMappedSize(0), mMappedLockOptions(GBL_WRITE_ONLY)
-		, mDirectlyMappable((usage & GBU_DYNAMIC) != 0), mSupportsGPUWrites(type == BT_STORAGE), mRequiresView(false)
-		, mIsMapped(false)
+		: HardwareBuffer(size, usage, deviceMask), mBuffers(), mStagingBuffer(nullptr), mStagingMemory(nullptr)
+		, mMappedDeviceIdx(-1), mMappedGlobalQueueIdx(-1), mMappedOffset(0), mMappedSize(0)
+		, mMappedLockOptions(GBL_WRITE_ONLY), mDirectlyMappable((usage & GBU_DYNAMIC) != 0)
+		, mSupportsGPUWrites(type == BT_STRUCTURED || ((usage & GBU_LOADSTORE) == GBU_LOADSTORE)), mIsMapped(false)
 	{
 		VkBufferUsageFlags usageFlags = 0;
 		switch(type)
 		{
 		case BT_VERTEX:
 			usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+			if((usage & GBU_LOADSTORE) == GBU_LOADSTORE)
+				usageFlags |= VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
 			break;
 		case BT_INDEX:
 			usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+			if((usage & GBU_LOADSTORE) == GBU_LOADSTORE)
+				usageFlags |= VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
 			break;
 		case BT_UNIFORM:
 			usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 			break;
 		case BT_GENERIC:
 			usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
-			mRequiresView = true;
-			break;
-		case BT_STORAGE:
-			usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | 
-				VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
-			mRequiresView = true;
+
+			if((usage & GBU_LOADSTORE) == GBU_LOADSTORE)
+				usageFlags |= VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
+
 			break;
 		case BT_STRUCTURED:
 			usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -129,13 +221,6 @@ namespace bs { namespace ct
 		mBufferCI.usage = usageFlags;
 		mBufferCI.queueFamilyIndexCount = 0;
 		mBufferCI.pQueueFamilyIndices = nullptr;
-
-		mViewCI.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
-		mViewCI.pNext = nullptr;
-		mViewCI.flags = 0;
-		mViewCI.format = VulkanUtility::getBufferFormat(format);
-		mViewCI.offset = 0;
-		mViewCI.range = VK_WHOLE_SIZE;
 
 		VulkanRenderAPI& rapi = static_cast<VulkanRenderAPI&>(RenderAPI::instance());
 		VulkanDevice* devices[BS_MAX_DEVICES];
@@ -192,19 +277,8 @@ namespace bs { namespace ct
 
 		VmaAllocation allocation = device.allocateMemory(buffer, flags);
 
-		VkBufferView view;
-		if (mRequiresView && !staging)
-		{
-			mViewCI.buffer = buffer;
-
-			result = vkCreateBufferView(vkDevice, &mViewCI, gVulkanAllocator, &view);
-			assert(result == VK_SUCCESS);
-		}
-		else
-			view = VK_NULL_HANDLE;
-
 		mBufferCI.usage = usage; // Restore original usage
-		return device.getResourceManager().create<VulkanBuffer>(buffer, view, allocation);
+		return device.getResourceManager().create<VulkanBuffer>(buffer, allocation);
 	}
 
 	void* VulkanHardwareBuffer::map(UINT32 offset, UINT32 length, GpuLockOptions options, UINT32 deviceIdx, UINT32 queueIdx)
@@ -250,8 +324,12 @@ namespace bs { namespace ct
 		// If memory is host visible try mapping it directly
 		if(mDirectlyMappable)
 		{
+			// Caller guarantees he won't touch the same data as the GPU, so just map even if the GPU is using the buffer
+			if (options == GBL_WRITE_ONLY_NO_OVERWRITE)
+				return buffer->map(offset, length);
+
 			// Check is the GPU currently reading or writing from the buffer
-			UINT32 useMask = buffer->getUseInfo(VulkanUseFlag::Read | VulkanUseFlag::Write);
+			UINT32 useMask = buffer->getUseInfo(VulkanAccessFlag::Read | VulkanAccessFlag::Write);
 
 			// Note: Even if GPU isn't currently using the buffer, but the buffer supports GPU writes, we consider it as
 			// being used because the write could have completed yet still not visible, so we need to issue a pipeline
@@ -288,10 +366,6 @@ namespace bs { namespace ct
 				return buffer->map(offset, length);
 			}
 
-			// Caller guarantees he won't touch the same data as the GPU, so just map even though the GPU is using the buffer
-			if (options == GBL_WRITE_ONLY_NO_OVERWRITE)
-				return buffer->map(offset, length);
-
 			// Caller doesn't care about buffer contents, so just discard the existing buffer and create a new one
 			if (options == GBL_WRITE_ONLY_DISCARD)
 			{
@@ -312,9 +386,9 @@ namespace bs { namespace ct
 				// Ensure flush() will wait for all queues currently using to the buffer (if any) to finish
 				// If only reading, wait for all writes to complete, otherwise wait on both writes and reads
 				if (options == GBL_READ_ONLY)
-					useMask = buffer->getUseInfo(VulkanUseFlag::Write);
+					useMask = buffer->getUseInfo(VulkanAccessFlag::Write);
 				else
-					useMask = buffer->getUseInfo(VulkanUseFlag::Read | VulkanUseFlag::Write);
+					useMask = buffer->getUseInfo(VulkanAccessFlag::Read | VulkanAccessFlag::Write);
 
 				transferCB->appendMask(useMask);
 
@@ -388,7 +462,7 @@ namespace bs { namespace ct
 				
 			// Similar to above, if buffer supports GPU writes or is currently being written to, we need to wait on any
 			// potential writes to complete
-			UINT32 writeUseMask = buffer->getUseInfo(VulkanUseFlag::Write);
+			UINT32 writeUseMask = buffer->getUseInfo(VulkanAccessFlag::Write);
 			if(mSupportsGPUWrites || writeUseMask != 0)
 			{
 				// Ensure flush() will wait for all queues currently writing to the buffer (if any) to finish
@@ -449,7 +523,7 @@ namespace bs { namespace ct
 
 				// If the buffer is used in any way on the GPU, we need to wait for that use to finish before
 				// we issue our copy
-				UINT32 useMask = buffer->getUseInfo(VulkanUseFlag::Read | VulkanUseFlag::Write);
+				UINT32 useMask = buffer->getUseInfo(VulkanAccessFlag::Read | VulkanAccessFlag::Write);
 				bool isNormalWrite = false;
 				if(useMask != 0) // Buffer is currently used on the GPU
 				{
@@ -496,7 +570,7 @@ namespace bs { namespace ct
 						{
 							buffer->copy(transferCB->getCB(), newBuffer, 0, 0, mSize);
 
-							transferCB->getCB()->registerResource(buffer, VK_ACCESS_TRANSFER_READ_BIT, VulkanUseFlag::Read);
+							transferCB->getCB()->registerBuffer(buffer, BufferUseFlagBits::Transfer, VulkanAccessFlag::Read);
 						}
 
 						buffer->destroy();
@@ -509,14 +583,14 @@ namespace bs { namespace ct
 				if (mStagingBuffer != nullptr)
 				{
 					mStagingBuffer->copy(transferCB->getCB(), buffer, 0, mMappedOffset, mMappedSize);
-					transferCB->getCB()->registerResource(mStagingBuffer, VK_ACCESS_TRANSFER_READ_BIT, VulkanUseFlag::Read);
+					transferCB->getCB()->registerBuffer(mStagingBuffer, BufferUseFlagBits::Transfer, VulkanAccessFlag::Read);
 				}
 				else // Staging memory
 				{
 					buffer->update(transferCB->getCB(), mStagingMemory, mMappedOffset, mMappedSize);
 				}
 
-				transferCB->getCB()->registerResource(buffer, VK_ACCESS_TRANSFER_WRITE_BIT, VulkanUseFlag::Write);
+				transferCB->getCB()->registerBuffer(buffer, BufferUseFlagBits::Transfer, VulkanAccessFlag::Write);
 
 				// We don't actually flush the transfer buffer here since it's an expensive operation, but it's instead
 				// done automatically before next "normal" command buffer submission.
@@ -580,8 +654,8 @@ namespace bs { namespace ct
 		src->copy(vkCB, dst, srcOffset, dstOffset, length);
 
 		// Notify the command buffer that these resources are being used on it
-		vkCB->registerResource(src, VK_ACCESS_TRANSFER_READ_BIT, VulkanUseFlag::Read);
-		vkCB->registerResource(dst, VK_ACCESS_TRANSFER_WRITE_BIT, VulkanUseFlag::Write);
+		vkCB->registerBuffer(src, BufferUseFlagBits::Transfer, VulkanAccessFlag::Read);
+		vkCB->registerBuffer(dst, BufferUseFlagBits::Transfer, VulkanAccessFlag::Write);
 	}
 
 	void VulkanHardwareBuffer::readData(UINT32 offset, UINT32 length, void* dest, UINT32 deviceIdx, UINT32 queueIdx)

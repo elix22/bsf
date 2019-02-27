@@ -62,10 +62,6 @@ namespace bs
 	template<>
 	struct TGpuPipelineStateTypes < false >
 	{
-		typedef SPtr<BlendState> BlendStateType;
-		typedef SPtr<RasterizerState> RasterizerStateType;
-		typedef SPtr<DepthStencilState> DepthStencilStateType;
-		typedef SPtr<GpuProgram> GpuProgramType;
 		typedef GpuPipelineParamInfo GpuPipelineParamInfoType;
 		typedef PIPELINE_STATE_DESC StateDescType;
 	};
@@ -73,10 +69,6 @@ namespace bs
 	template<>
 	struct TGpuPipelineStateTypes < true >
 	{
-		typedef SPtr<ct::BlendState> BlendStateType;
-		typedef SPtr<ct::RasterizerState> RasterizerStateType;
-		typedef SPtr<ct::DepthStencilState> DepthStencilStateType;
-		typedef SPtr<ct::GpuProgram> GpuProgramType;
 		typedef ct::GpuPipelineParamInfo GpuPipelineParamInfoType;
 		typedef ct::PIPELINE_STATE_DESC StateDescType;
 	};
@@ -89,14 +81,14 @@ namespace bs
 	class BS_CORE_EXPORT TGraphicsPipelineState
 	{
 	public:
-		typedef typename TGpuPipelineStateTypes<Core>::BlendStateType BlendStateType;
-		typedef typename TGpuPipelineStateTypes<Core>::RasterizerStateType RasterizerStateType;
-		typedef typename TGpuPipelineStateTypes<Core>::DepthStencilStateType DepthStencilStateType;
-		typedef typename TGpuPipelineStateTypes<Core>::GpuProgramType GpuProgramType;
-		typedef typename TGpuPipelineStateTypes<Core>::StateDescType StateDescType;
-		typedef typename TGpuPipelineStateTypes<Core>::GpuPipelineParamInfoType GpuPipelineParamInfoType;
+		using BlendStateType = SPtr<CoreVariantType<BlendState, Core>>;
+		using RasterizerStateType = SPtr<CoreVariantType<RasterizerState, Core>>;
+		using DepthStencilStateType = SPtr<CoreVariantType<DepthStencilState, Core>>;
+		using GpuProgramType = SPtr<CoreVariantType<GpuProgram, Core>>;
+		using StateDescType = typename TGpuPipelineStateTypes<Core>::StateDescType;
+		using GpuPipelineParamInfoType = typename TGpuPipelineStateTypes<Core>::GpuPipelineParamInfoType;
 
-		virtual ~TGraphicsPipelineState() { }
+		virtual ~TGraphicsPipelineState() = default;
 
 		bool hasVertexProgram() const { return mData.vertexProgram != nullptr; }
 		bool hasFragmentProgram() const { return mData.fragmentProgram != nullptr; }
@@ -118,7 +110,7 @@ namespace bs
 		const SPtr<GpuPipelineParamInfoType>& getParamInfo() const { return mParamInfo; }
 
 	protected:
-		TGraphicsPipelineState();
+		TGraphicsPipelineState() = default;
 		TGraphicsPipelineState(const StateDescType& desc);
 
 		StateDescType mData;
@@ -133,8 +125,8 @@ namespace bs
 	class BS_CORE_EXPORT TComputePipelineState
 	{
 	public:
-		typedef typename TGpuPipelineStateTypes<Core>::GpuProgramType GpuProgramType;
-		typedef typename TGpuPipelineStateTypes<Core>::GpuPipelineParamInfoType GpuPipelineParamInfoType;
+		using GpuProgramType = SPtr<CoreVariantType<GpuProgram, Core>>;
+		using GpuPipelineParamInfoType = typename TGpuPipelineStateTypes<Core>::GpuPipelineParamInfoType;
 
 		virtual ~TComputePipelineState() { }
 

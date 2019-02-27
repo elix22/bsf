@@ -15,7 +15,7 @@ namespace bs
 
 	void* F_CALLBACK FMODRealloc(void *ptr, unsigned int size, FMOD_MEMORY_TYPE type, const char *sourcestr)
 	{
-		// Note: Not using Banshee's allocators, but have no easy alternative to implement realloc manually.
+		// Note: Not using framework's allocators, but have no easy alternative to implement realloc manually.
 		// This is okay to use in combination with general purpose bs_alloc/bs_free since they internally use malloc/free.
 		return realloc(ptr, size);
 	}
@@ -128,7 +128,7 @@ namespace bs
 			}
 		}
 
-		LOGWRN("Failed changing audio device to: " + toString(device.name));
+		LOGWRN("Failed changing audio device to: " + device.name);
 	}
 
 	SPtr<AudioClip> FMODAudio::createClip(const SPtr<DataStream>& samples, UINT32 streamSize, UINT32 numSamples,

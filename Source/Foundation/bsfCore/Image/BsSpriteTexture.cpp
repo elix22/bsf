@@ -5,6 +5,7 @@
 #include "Image/BsTexture.h"
 #include "Resources/BsResources.h"
 #include "Resources/BsBuiltinResources.h"
+#include "CoreThread/BsCoreObjectSync.h"
 
 namespace bs
 {
@@ -12,6 +13,32 @@ namespace bs
 	{
 		if(mPlayback == SpriteAnimationPlayback::None)
 			return Rect2(mUVOffset.x, mUVOffset.y, mUVScale.x, mUVScale.y);
+
+		UINT32 row;
+		UINT32 column;
+		getAnimationFrame(t, row, column);
+
+		Rect2 output;
+
+		// Note: These could be pre-calculated
+		output.width = mUVScale.x / mAnimation.numColumns;
+		output.height = mUVScale.y / mAnimation.numRows;
+
+		output.x = mUVOffset.x + column * output.width;
+		output.y = mUVOffset.y + row * output.height;
+
+		return output;
+	}
+
+	void SpriteTextureBase::getAnimationFrame(float t, UINT32& row, UINT32& column) const
+	{
+		if(mPlayback == SpriteAnimationPlayback::None)
+		{
+			row = 0;
+			column = 0;
+
+			return;
+		}
 
 		// Note: Duration could be pre-calculated
 		float duration = 0.0f;
@@ -38,23 +65,23 @@ namespace bs
 		if(mAnimation.count > 0)
 			frame = Math::clamp(Math::floorToPosInt(pct * mAnimation.count), 0U, mAnimation.count - 1);
 
-		const UINT32 row = frame / mAnimation.numRows;
-		const UINT32 column = frame % mAnimation.numColumns;
+		row = frame / mAnimation.numColumns;
+		column = frame % mAnimation.numColumns;
+	}
 
-		Rect2 output;
-
-		// Note: These could be pre-calculated
-		output.width = mUVScale.x / mAnimation.numColumns;
-		output.height = mUVScale.y / mAnimation.numRows;
-
-		output.x = mUVOffset.x + column * output.width;
-		output.y = mUVOffset.y + row * output.height;
-
-		return output;
+	template <bool Core>
+	template <class P>
+	void TSpriteTexture<Core>::rttiEnumFields(P p)
+	{
+		p(mUVOffset);
+		p(mUVScale);
+		p(mAnimation);
+		p(mPlayback);
+		p(mAtlasTexture);
 	}
 
 	SpriteTexture::SpriteTexture(const Vector2& uvOffset, const Vector2& uvScale, const HTexture& texture)
-		:SpriteTextureBase(uvOffset, uvScale), mAtlasTexture(texture)
+		:TSpriteTexture(uvOffset, uvScale, texture)
 	{ }
 
 	const HSpriteTexture& SpriteTexture::dummy()
@@ -99,25 +126,11 @@ namespace bs
 
 	CoreSyncData SpriteTexture::syncToCore(FrameAlloc* allocator)
 	{
-		UINT32 size = rttiGetElemSize(mUVOffset) + rttiGetElemSize(mUVScale) + sizeof(SPtr<ct::Texture>) + 
-			rttiGetElemSize(mAnimation) + rttiGetElemSize(mPlayback);
+		UINT32 size = coreSyncGetElemSize(*this);
 
 		UINT8* buffer = allocator->alloc(size);
 		char* dataPtr = (char*)buffer;
-
-		dataPtr = rttiWriteElem(mUVOffset, dataPtr);
-		dataPtr = rttiWriteElem(mUVScale, dataPtr);
-		
-		SPtr<ct::Texture>* texture = new (dataPtr) SPtr<ct::Texture>();
-		if (mAtlasTexture.isLoaded(false))
-			*texture = mAtlasTexture->getCore();
-		else
-			*texture = nullptr;
-
-		dataPtr += sizeof(SPtr<ct::Texture>);
-
-		dataPtr = rttiWriteElem(mAnimation, dataPtr);
-		dataPtr = rttiWriteElem(mPlayback, dataPtr);
+		dataPtr = coreSyncWriteElem(*this, dataPtr);
 
 		return CoreSyncData(buffer, size);
 	}
@@ -200,7 +213,7 @@ namespace bs
 	{
 		SpriteTexture::SpriteTexture(const Vector2& uvOffset, const Vector2& uvScale, SPtr<Texture> texture,
 			const SpriteSheetGridAnimation& anim, SpriteAnimationPlayback playback)
-			:SpriteTextureBase(uvOffset, uvScale), mAtlasTexture(std::move(texture))
+			:TSpriteTexture(uvOffset, uvScale, texture)
 		{
 			mAnimation = anim;
 			mPlayback = playback;
@@ -209,18 +222,7 @@ namespace bs
 		void SpriteTexture::syncToCore(const CoreSyncData& data)
 		{
 			char* dataPtr = (char*)data.getBuffer();
-
-			dataPtr = rttiReadElem(mUVOffset, dataPtr);
-			dataPtr = rttiReadElem(mUVScale, dataPtr);
-
-			SPtr<Texture>* texture = (SPtr<Texture>*)dataPtr;
-
-			mAtlasTexture = *texture;
-			texture->~SPtr<Texture>();
-			dataPtr += sizeof(SPtr<Texture>);
-
-			dataPtr = rttiReadElem(mAnimation, dataPtr);
-			dataPtr = rttiReadElem(mPlayback, dataPtr);
+			dataPtr = coreSyncReadElem(*this, dataPtr);
 		}
 	}
 }

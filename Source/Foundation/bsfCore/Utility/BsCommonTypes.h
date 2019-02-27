@@ -81,9 +81,9 @@ namespace bs
 	/**	Types of frame buffers. */
 	enum FrameBufferType
 	{
-		FBT_COLOR = 0x1, /**< Clear the color surface. */
-		FBT_DEPTH = 0x2, /**< Clear the depth surface. */
-		FBT_STENCIL = 0x4 /**< Clear the stencil surface. */
+		FBT_COLOR = 0x1, /**< Color surface. */
+		FBT_DEPTH = 0x2, /**< Depth surface. */
+		FBT_STENCIL = 0x4 /**< Stencil surface. */
 	};
 
 	/**
@@ -196,11 +196,13 @@ namespace bs
 		 * Signifies that you don't plan on modifying the buffer often (or at all) after creation. Modifying such buffer 
 		 * will involve a larger performance hit. Mutually exclusive with GBU_DYNAMIC.
 		 */
-		GBU_STATIC = 0x01,
+		GBU_STATIC = 1 << 0,
 		/** 
 		 * Signifies that you will modify this buffer fairly often (e.g. every frame). Mutually exclusive with GBU_STATIC. 
 		 */
-		GBU_DYNAMIC = 0x02,
+		GBU_DYNAMIC = 1 << 1,
+		/** Siginifies that the buffer can be used for arbitrary load/store operations on the GPU. Implies GBU_STATIC. */
+		GBU_LOADSTORE = GBU_STATIC | 1 << 2
 	};
 
 	/** Types of generic GPU buffers that may be attached to GPU programs. */
@@ -291,13 +293,6 @@ namespace bs
 		GDF_GPU4 = 0x08,
 		/** Use the fifth GPU. */
 		GDF_GPU5 = 0x10
-	};
-
-	/** Type of parameter block usages. Signifies how often will parameter blocks be changed. */
-	enum GpuParamBlockUsage
-	{
-		GPBU_STATIC, /**< Buffer will be rarely, if ever, updated. */
-		GPBU_DYNAMIC /**< Buffer will be updated often (for example every frame). */
 	};
 
 	/** Type of a parameter in a GPU program. */
@@ -518,7 +513,7 @@ namespace bs
 	};
 
 	/** Determines the type of the source image for generating cubemaps. */
-	enum class CubemapSourceType
+	enum class BS_SCRIPT_EXPORT(m:Utility,api:bsf,api:bed) CubemapSourceType
 	{
 		/** Source is a single image that will be replicated on all cubemap faces. */
 		Single,
@@ -554,7 +549,7 @@ namespace bs
 		RT_DEPTH = 1 << 30,
 		RT_STENCIL = 1 << 31,
 		RT_DEPTH_STENCIL = (1 << 30) | (1 << 31),
-		RT_ALL = 0xFF
+		RT_ALL = 0xFFFFFFFF
 	};
 
 	typedef Flags<RenderSurfaceMaskBits> RenderSurfaceMask;
@@ -659,20 +654,6 @@ namespace bs
 		UINT8* data;
 		UINT32 size;
 	};
-
-	typedef Map<String, String> NameValuePairList;
-
-	template<bool Core> struct TMeshType {};
-	template<> struct TMeshType < false > { typedef HMesh Type; };
-	template<> struct TMeshType < true > { typedef SPtr<ct::Mesh> Type; };
-
-	template<bool Core> struct TMaterialPtrType {};
-	template<> struct TMaterialPtrType < false > { typedef HMaterial Type; };
-	template<> struct TMaterialPtrType < true > { typedef SPtr<ct::Material> Type; };
-
-	template<bool Core> struct TTextureType {};
-	template<> struct TTextureType < false > { typedef HTexture Type; };
-	template<> struct TTextureType < true > { typedef SPtr<ct::Texture> Type; };
 
 	/** @cond SPECIALIZATIONS */
 	BS_ALLOW_MEMCPY_SERIALIZATION(TextureSurface);

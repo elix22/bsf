@@ -7,68 +7,44 @@
 #include "Allocators/BsPoolAlloc.h"
 #include "Private/Particles/BsParticleSet.h"
 #include "Animation/BsAnimationManager.h"
+#include "Image/BsPixelUtil.h"
 
 namespace bs
 {
-	void ParticleRenderData::updateSortIndices(const Vector3& referencePoint)
+	/** Helper method used for writing particle data into the @p pixels buffer. */
+	template<class T, class PR>
+	void iterateOverPixels(PixelData& pixels, UINT32 count, UINT32 stride, PR predicate)
 	{
-		struct ParticleSortData
+		auto dest = (UINT8*)pixels.getData();
+
+		UINT32 x = 0;
+		for (UINT32 i = 0; i < count; i++)
 		{
-			ParticleSortData(float key, UINT32 idx)
-				:key(key), idx(idx)
-			{ }
+			predicate((T*)dest, i);
 
-			float key;
-			UINT32 idx;
-		};
+			dest += stride;
+			x++;
 
-		const UINT32 size = positionAndRotation.getWidth();
-		UINT8* positionPtr = positionAndRotation.getData();
-
-		bs_frame_mark();
-		{
-			FrameVector<ParticleSortData> sortData;
-			sortData.reserve(numParticles);
-
-			UINT32 x = 0;
-			for (UINT32 i = 0; i < numParticles; i++)
+			if (x >= pixels.getWidth())
 			{
-				Vector4& posAndRot = *(Vector4*)positionPtr;
-				Vector3 position(posAndRot);
-
-				float distance = referencePoint.squaredDistance(position);
-				sortData.emplace_back(distance, i);
-
-				positionPtr += sizeof(Vector4);
-				x++;
-
-				if (x >= size)
-				{
-					x = 0;
-					positionPtr += positionAndRotation.getRowSkip();
-				}
+				x = 0;
+				dest += pixels.getRowSkip() * PixelUtil::getNumElemBytes(pixels.getFormat());;
 			}
-
-			std::sort(sortData.begin(), sortData.end(),
-				[](const ParticleSortData& lhs, const ParticleSortData& rhs)
-			{
-				return rhs.key < lhs.key;
-			});
-
-			indices.clear();
-			indices.reserve(numParticles);
-
-			for (UINT32 i = 0; i < numParticles; i++)
-				indices.push_back(sortData[i].idx);
 		}
-		bs_frame_clear();
+	}
+
+	/** Helper method used for writing particle data into the @p pixels buffer. */
+	template<class T, class PR>
+	void iterateOverPixels(PixelData& pixels, UINT32 count, PR predicate)
+	{
+		iterateOverPixels<T>(pixels, count, sizeof(T), predicate);
 	}
 
 	/** 
-	 * Maintains a pool of buffers that are used for storing particle system rendering data. Buffers are always created
-	 * in 2D square layout as they are ultimately used for initializing textures.
+	 * Maintains a pool of buffers that are used for passing results of particle simulation from the simulation to the
+	 * core thread. 
 	 */
-	class ParticleRenderDataPool
+	class ParticleSimulationDataPool
 	{
 		/** Contains a list of buffers for the specified size. */
 		struct BuffersPerSize
@@ -78,42 +54,54 @@ namespace bs
 		};
 
 	public:
-		~ParticleRenderDataPool()
+		~ParticleSimulationDataPool()
 		{
 			Lock lock(mMutex);
 
-			for (auto& sizeEntry : mBufferList)
+			for (auto& sizeEntry : mBillboardBufferList)
 			{
 				for (auto& entry : sizeEntry.second.buffers)
-					mAlloc.destruct(entry);
+					mBillboardAlloc.destruct(static_cast<ParticleBillboardRenderData*>(entry));
 			}
+
+			for (auto& sizeEntry : mMeshBufferList)
+			{
+				for (auto& entry : sizeEntry.second.buffers)
+					mMeshAlloc.destruct(static_cast<ParticleMeshRenderData*>(entry));
+			}
+
+			for (auto& entry : mGPUBufferList)
+				mGPUAlloc.destruct(entry);
 		}
 
-		/** Returns a new set of render data buffers and populates them with data from the provided ParticleSet. */
-		ParticleRenderData* alloc(const ParticleSet& particleSet)
+		/** 
+		 * Returns a set of buffers containing particle data from the provided particle set. Usable for rendering the
+		 * results of the CPU particle simulation as billboards.
+		 */
+		ParticleBillboardRenderData* allocCPUBillboard(const ParticleSet& particleSet)
 		{
 			const UINT32 size = particleSet.determineTextureSize();
 
-			ParticleRenderData* output = nullptr;
+			ParticleBillboardRenderData* output = nullptr;
 
 			{
 				Lock lock(mMutex);
 
-				BuffersPerSize& buffers = mBufferList[size];
+				BuffersPerSize& buffers = mBillboardBufferList[size];
 				if (buffers.nextFreeIdx < (UINT32)buffers.buffers.size())
 				{
-					output = buffers.buffers[buffers.nextFreeIdx];
+					output = static_cast<ParticleBillboardRenderData*>(buffers.buffers[buffers.nextFreeIdx]);
 					buffers.nextFreeIdx++;
 				}
 			}
 
 			if (!output)
 			{
-				output = createNewBuffers(size);
+				output = createNewBillboardBuffersCPU(size);
 
 				Lock lock(mMutex);
 
-				BuffersPerSize& buffers = mBufferList[size];
+				BuffersPerSize& buffers = mBillboardBufferList[size];
 				buffers.buffers.push_back(output);
 				buffers.nextFreeIdx++;
 			}
@@ -123,105 +111,181 @@ namespace bs
 			const ParticleSetData& particles = particleSet.getParticles();
 
 			// TODO: Use non-temporal writes?
+			iterateOverPixels<Vector4>(output->positionAndRotation, count,
+				[&particles](Vector4* dst, UINT32 idx)
 			{
-				const PixelData& pixels = output->positionAndRotation;
+				dst->x = particles.position[idx].x;
+				dst->y = particles.position[idx].y;
+				dst->z = particles.position[idx].z;
+				dst->w = particles.rotation[idx].x * Math::DEG2RAD;
 
-				UINT8* dstData = pixels.getData();
-				UINT8* ptr = dstData;
-				UINT32 x = 0;
+			});
 
-				for (UINT32 i = 0; i < count; i++)
+			iterateOverPixels<RGBA>(output->color, count,
+				[&particles](RGBA* dst, UINT32 idx)
+			{
+				*dst = particles.color[idx];
+			});
+
+			iterateOverPixels<UINT16>(output->sizeAndFrameIdx, count, sizeof(UINT16) * 4,
+				[&particles](UINT16* dst, UINT32 idx)
+			{
+				dst[0] = Bitwise::floatToHalf(particles.size[idx].x);
+				dst[1] = Bitwise::floatToHalf(particles.size[idx].y);
+				dst[2] = Bitwise::floatToHalf(particles.frame[idx]);
+			});
+
+			output->indices.clear();
+			output->indices.resize(count);
+
+			return output;
+		}
+
+		/** 
+		 * Returns a set of buffers containing particle data from the provided particle set. Usable for rendering the
+		 * results of the CPU particle simulation as 3D meshes.
+		 */
+		ParticleMeshRenderData* allocCPUMesh(const ParticleSet& particleSet)
+		{
+			const UINT32 size = particleSet.determineTextureSize();
+
+			ParticleMeshRenderData* output = nullptr;
+
+			{
+				Lock lock(mMutex);
+
+				BuffersPerSize& buffers = mMeshBufferList[size];
+				if (buffers.nextFreeIdx < (UINT32)buffers.buffers.size())
 				{
-					Vector4& posAndRot = *(Vector4*)ptr;
-					posAndRot.x = particles.position[i].x;
-					posAndRot.y = particles.position[i].y;
-					posAndRot.z = particles.position[i].z;
-					posAndRot.w = particles.rotation[i].x;
-
-					ptr += sizeof(Vector4);
-					x++;
-
-					if (x >= size)
-					{
-						x = 0;
-						ptr += pixels.getRowSkip();
-					}
+					output = static_cast<ParticleMeshRenderData*>(buffers.buffers[buffers.nextFreeIdx]);
+					buffers.nextFreeIdx++;
 				}
 			}
 
+			if (!output)
 			{
-				const PixelData& pixels = output->color;
+				output = createNewMeshBuffersCPU(size);
 
-				UINT8* dstData = pixels.getData();
-				UINT8* ptr = dstData;
-				UINT32 x = 0;
+				Lock lock(mMutex);
 
-				for (UINT32 i = 0; i < count; i++)
+				BuffersPerSize& buffers = mMeshBufferList[size];
+				buffers.buffers.push_back(output);
+				buffers.nextFreeIdx++;
+			}
+
+			// Populate buffer contents
+			const UINT32 count = particleSet.getParticleCount();
+			const ParticleSetData& particles = particleSet.getParticles();
+
+			// TODO: Use non-temporal writes?
+			iterateOverPixels<Vector4>(output->position, count,
+				[&particles](Vector4* dst, UINT32 idx)
+			{
+				dst->x = particles.position[idx].x;
+				dst->y = particles.position[idx].y;
+				dst->z = particles.position[idx].z;
+
+			});
+
+			iterateOverPixels<RGBA>(output->color, count,
+				[&particles](RGBA* dst, UINT32 idx)
+			{
+				*dst = particles.color[idx];
+			});
+
+			iterateOverPixels<UINT16>(output->rotation, count, sizeof(UINT16) * 4,
+				[&particles](UINT16* dst, UINT32 idx)
+			{
+				dst[0] = Bitwise::floatToHalf(particles.rotation[idx].x * Math::DEG2RAD);
+				dst[1] = Bitwise::floatToHalf(particles.rotation[idx].y * Math::DEG2RAD);
+				dst[2] = Bitwise::floatToHalf(particles.rotation[idx].z * Math::DEG2RAD);
+			});
+
+			iterateOverPixels<UINT16>(output->size, count, sizeof(UINT16) * 4,
+				[&particles](UINT16* dst, UINT32 idx)
+			{
+				dst[0] = Bitwise::floatToHalf(particles.size[idx].x);
+				dst[1] = Bitwise::floatToHalf(particles.size[idx].y);
+				dst[2] = Bitwise::floatToHalf(particles.size[idx].z);
+			});
+
+			output->indices.clear();
+			output->indices.resize(count);
+
+			return output;
+		}
+
+		/** 
+		 * Returns a list of particles from the provided particle set that may be used for inserting the particles into the
+		 * GPU simulation. 
+		 */
+		ParticleGPUSimulationData* allocGPU(const ParticleSet& particleSet)
+		{
+			ParticleGPUSimulationData* output = nullptr;
+
+			{
+				Lock lock(mMutex);
+
+				if (mNextFreeGPUBuffer < (UINT32)mGPUBufferList.size())
 				{
-					RGBA& color = *(RGBA*)ptr;
-					color = particles.color[i];
-
-					ptr += sizeof(RGBA);
-					x++;
-
-					if (x >= size)
-					{
-						x = 0;
-						ptr += pixels.getRowSkip();
-					}
+					output = mGPUBufferList[mNextFreeGPUBuffer];
+					mNextFreeGPUBuffer++;
 				}
 			}
 
+			if (!output)
 			{
-				const PixelData& pixels = output->sizeAndFrameIdx;
+				output = createNewBuffersGPU();
 
-				UINT8* dstData = pixels.getData();
-				UINT8* ptr = dstData;
-				UINT32 x = 0;
+				Lock lock(mMutex);
 
-				for (UINT32 i = 0; i < count; i++)
-				{
-					UINT16& sizeX = *(UINT16*)ptr;
-					ptr += sizeof(UINT16);
+				mGPUBufferList.push_back(output);
+				mNextFreeGPUBuffer++;
+			}
 
-					UINT16& sizeY = *(UINT16*)ptr;
-					ptr += sizeof(UINT16);
+			// Populate buffer contents
+			const UINT32 count = particleSet.getParticleCount();
+			const ParticleSetData& particles = particleSet.getParticles();
 
-					UINT16& frameIdx = *(UINT16*)ptr;
-					ptr += sizeof(UINT16);
+			output->particles.clear();
+			output->particles.resize(count);
 
-					// Unused
-					ptr += sizeof(UINT16);
+			// TODO: Use non-temporal writes?
+			for (UINT32 i = 0; i < count; i++)
+			{
+				GpuParticle particle;
+				particle.position = particles.position[i];
+				particle.lifetime = particles.lifetime[i];
+				particle.initialLifetime =  particles.initialLifetime[i];
+				particle.velocity = particles.velocity[i];
+				particle.size = Vector2(particles.size[i].x, particles.size[i].z);
+				particle.rotation = particles.rotation[i].z;
 
-					sizeX = Bitwise::floatToHalf(particles.size[i].x);
-					sizeY = Bitwise::floatToHalf(particles.size[i].y);
-					frameIdx = Bitwise::floatToHalf(particles.frame[i]);
-
-					x++;
-					if (x >= size)
-					{
-						x = 0;
-						ptr += pixels.getRowSkip();
-					}
-				}
+				output->particles[i] = particle;
 			}
 
 			return output;
 		}
 
+		/** Makes all the buffers available for allocations. Does not free internal buffer memory. */
 		void clear()
 		{
 			Lock lock(mMutex);
 
-			for(auto& buffers : mBufferList)
+			for(auto& buffers : mBillboardBufferList)
 				buffers.second.nextFreeIdx = 0;
+
+			for(auto& buffers : mMeshBufferList)
+				buffers.second.nextFreeIdx = 0;
+
+			mNextFreeGPUBuffer = 0;
 		}
 
 	private:
-		/** Allocates a new set of buffers of the provided @p size width and height. */
-		ParticleRenderData* createNewBuffers(UINT32 size)
+		/** Allocates a new set of CPU buffers used for billboard rendering of the provided @p size width and height. */
+		ParticleBillboardRenderData* createNewBillboardBuffersCPU(UINT32 size)
 		{
-			ParticleRenderData* output = mAlloc.construct<ParticleRenderData>();
+			auto output = mBillboardAlloc.construct<ParticleBillboardRenderData>();
 
 			output->positionAndRotation = PixelData(size, size, 1, PF_RGBA32F);
 			output->color = PixelData(size, size, 1, PF_RGBA8);
@@ -235,15 +299,46 @@ namespace bs
 			return output;
 		}
 
-		UnorderedMap<UINT32, BuffersPerSize> mBufferList;
-		PoolAlloc<sizeof(ParticleRenderData), 32, 4, true> mAlloc;
+		/** Allocates a new set of CPU buffers used for mesh rendering of the provided @p size width and height. */
+		ParticleMeshRenderData* createNewMeshBuffersCPU(UINT32 size)
+		{
+			auto output = mMeshAlloc.construct<ParticleMeshRenderData>();
+
+			output->position = PixelData(size, size, 1, PF_RGBA32F);
+			output->color = PixelData(size, size, 1, PF_RGBA8);
+			output->size = PixelData(size, size, 1, PF_RGBA16F);
+			output->rotation = PixelData(size, size, 1, PF_RGBA16F);
+
+			// Note: Potentially allocate them all in one large block
+			output->position.allocateInternalBuffer();
+			output->color.allocateInternalBuffer();
+			output->size.allocateInternalBuffer();
+			output->rotation.allocateInternalBuffer();
+
+			return output;
+		}
+
+		/** Allocates a new set of GPU buffers of the provided @p size width and height. */
+		ParticleGPUSimulationData* createNewBuffersGPU()
+		{
+			return mGPUAlloc.construct<ParticleGPUSimulationData>();
+		}
+
+		UnorderedMap<UINT32, BuffersPerSize> mBillboardBufferList;
+		UnorderedMap<UINT32, BuffersPerSize> mMeshBufferList;
+		Vector<ParticleGPUSimulationData*> mGPUBufferList;
+		UINT32 mNextFreeGPUBuffer = 0;
+
+		PoolAlloc<sizeof(ParticleBillboardRenderData), 32, 4, true> mBillboardAlloc;
+		PoolAlloc<sizeof(ParticleMeshRenderData), 32, 4, true> mMeshAlloc;
+		PoolAlloc<sizeof(ParticleGPUSimulationData), 32, 4, true> mGPUAlloc;
 		Mutex mMutex;
 	};
 
 	struct ParticleManager::Members
 	{
 		// TODO - Perhaps sharing one pool is better
-		ParticleRenderDataPool renderDataPool[CoreThread::NUM_SYNC_BUFFERS];
+		ParticleSimulationDataPool simDataPool[CoreThread::NUM_SYNC_BUFFERS];
 	};
 
 	ParticleManager::ParticleManager()
@@ -255,7 +350,7 @@ namespace bs
 		bs_delete(m);
 	}
 
-	ParticleRenderDataGroup* ParticleManager::update(const EvaluatedAnimationData& animData)
+	ParticlePerFrameData* ParticleManager::update(const EvaluatedAnimationData& animData)
 	{
 		// Note: Allow the worker threads to work alongside the main thread? Would require extra synchronization but
 		// potentially no benefit?
@@ -270,14 +365,15 @@ namespace bs
 		}
 
 		if(mPaused)
-			return &mRenderData[mReadBufferIdx];
+			return &mSimulationData[mReadBufferIdx];
 
 		// TODO - Perform culling (but only on deterministic particle systems). In which case cache the bounds so we don't
 		// need to recalculate them below
 
 		// Prepare the write buffer
-		ParticleRenderDataGroup& renderDataGroup = mRenderData[mWriteBufferIdx];
-		renderDataGroup.data.clear();
+		ParticlePerFrameData& simulationData = mSimulationData[mWriteBufferIdx];
+		simulationData.cpuData.clear();
+		simulationData.gpuData.clear();
 
 		// Queue evaluation tasks
 		{
@@ -287,43 +383,54 @@ namespace bs
 
 		float timeDelta = gTime().getFrameDelta();
 
-		ParticleRenderDataPool& renderDataPool = m->renderDataPool[mWriteBufferIdx];
-		renderDataPool.clear();
+		ParticleSimulationDataPool& simDataPool = m->simDataPool[mWriteBufferIdx];
+		simDataPool.clear();
 
 		for (auto& system : mSystems)
 		{
-			const auto evaluateWorker = [this, timeDelta, system, &animData, &renderDataPool, &renderDataGroup]()
+			const auto evaluateWorker = [this, timeDelta, system, &animData, &simDataPool, &simulationData]()
 			{
 				// Advance the simulation
 				system->_simulate(timeDelta, &animData);
 
-				ParticleRenderData* renderData = nullptr;
+				ParticleRenderData* simulationDataCPU = nullptr;
+				ParticleGPUSimulationData* simulationDataGPU = nullptr;
 				if(system->mParticleSet)
 				{
-					// Generate output data
+					// Generate simulation data to transfer to the core thread
 					const UINT32 numParticles = system->mParticleSet->getParticleCount();
+					const ParticleSystemSettings& settings = system->getSettings();
 
-					renderData = renderDataPool.alloc(*system->mParticleSet);
-					renderData->numParticles = numParticles;
-					renderData->bounds = system->_calculateBounds();
-
-					// If using a camera-independant sorting mode, sort the particles right away
-					switch (system->mSortMode)
+					if(settings.gpuSimulation)
+						simulationDataGPU = simDataPool.allocGPU(*system->mParticleSet);
+					else
 					{
-					default:
-					case ParticleSortMode::None: // No sort, just point the indices back to themselves
-						renderData->indices.clear();
-						renderData->indices.reserve(numParticles);
-						for (UINT32 i = 0; i < numParticles; i++)
-							renderData->indices.push_back(i);
-						break;
-					case ParticleSortMode::OldToYoung:
-					case ParticleSortMode::YoungToOld:
-						renderData->indices.clear();
-						renderData->indices.resize(numParticles);
-						sortParticles(*system->mParticleSet, system->mSortMode, Vector3::ZERO, renderData->indices.data());
-						break;
-					case ParticleSortMode::Distance: break;
+						if(settings.renderMode == ParticleRenderMode::Billboard)
+							simulationDataCPU = simDataPool.allocCPUBillboard(*system->mParticleSet);
+						else
+							simulationDataCPU = simDataPool.allocCPUMesh(*system->mParticleSet);
+
+						simulationDataCPU->numParticles = numParticles;
+
+						if(settings.useAutomaticBounds)
+							simulationDataCPU->bounds = system->_calculateBounds();
+						else
+							simulationDataCPU->bounds = settings.customBounds;
+
+						// If using a camera-independant sorting mode, sort the particles right away
+						switch (settings.sortMode)
+						{
+						default:
+						case ParticleSortMode::None: // No sort, just point the indices back to themselves
+							for (UINT32 i = 0; i < numParticles; i++)
+								simulationDataCPU->indices[i] = i;
+							break;
+						case ParticleSortMode::OldToYoung:
+						case ParticleSortMode::YoungToOld:
+							sortParticles(*system->mParticleSet, settings.sortMode, Vector3::ZERO, simulationDataCPU->indices.data());
+							break;
+						case ParticleSortMode::Distance: break;
+						}
 					}
 				}
 
@@ -333,8 +440,10 @@ namespace bs
 					assert(mNumActiveWorkers > 0);
 					mNumActiveWorkers--;
 
-					if(renderData)
-						renderDataGroup.data[system->mId] = renderData;
+					if(simulationDataCPU)
+						simulationData.cpuData[system->mId] = simulationDataCPU;
+					else if(simulationDataGPU)
+						simulationData.gpuData[system->mId] = simulationDataGPU;
 				}
 
 				mWorkerDoneSignal.notify_one();
@@ -356,7 +465,7 @@ namespace bs
 
 		mSwapBuffers = true;
 
-		return &mRenderData[mReadBufferIdx];
+		return &mSimulationData[mWriteBufferIdx];
 	}
 
 	void ParticleManager::sortParticles(const ParticleSet& set, ParticleSortMode sortMode, const Vector3& viewPoint, 

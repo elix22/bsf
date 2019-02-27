@@ -5,6 +5,7 @@
 #include "BsCorePrerequisites.h"
 #include "Animation/BsCurveCache.h"
 #include "Math/BsVector3.h"
+#include "Math/BsVector2.h"
 #include "Math/BsQuaternion.h"
 #include "Allocators/BsPoolAlloc.h"
 
@@ -22,6 +23,16 @@ namespace bs
 		T inTangent; /**< Input tangent (going from the previous key to this one) of the key. */
 		T outTangent; /**< Output tangent (going from this key to next one) of the key. */
 		float time; /**< Position of the key along the animation spline. */
+
+		bool operator== (const TKeyframe<T>& rhs) const
+		{
+			return (value == rhs.value && inTangent == rhs.inTangent && outTangent == rhs.outTangent && time == rhs.time);
+		}
+
+		bool operator!= (const TKeyframe<T>& rhs) const
+		{
+			return !operator==(rhs);
+		}
 	};
 
 	/** Keyframe specialization for integers (no tangents). */
@@ -30,10 +41,21 @@ namespace bs
 	{
 		INT32 value; /**< Value of the key. */
 		float time; /**< Position of the key along the animation spline. */
+
+		bool operator== (const TKeyframe<INT32>& rhs) const
+		{
+			return (value == rhs.value && time == rhs.time);
+		}
+
+		bool operator!= (const TKeyframe<INT32>& rhs) const
+		{
+			return !operator==(rhs);
+		}
 	};
 
 	template struct BS_SCRIPT_EXPORT(m:Animation,n:KeyFrame,pl:true) TKeyframe<float>;
 	template struct BS_SCRIPT_EXPORT(m:Animation,n:KeyFrameVec3,pl:true) TKeyframe<Vector3>;
+	template struct BS_SCRIPT_EXPORT(m:Animation,n:KeyFrameVec2,pl:true) TKeyframe<Vector2>;
 	template struct BS_SCRIPT_EXPORT(m:Animation,n:KeyFrameQuat,pl:true) TKeyframe<Quaternion>;
 
 	/**
@@ -46,7 +68,7 @@ namespace bs
 	public:
 		typedef TKeyframe<T> KeyFrame;
 
-		TAnimationCurve();
+		TAnimationCurve() = default;
 
 		/**
 		 * Creates a new animation curve.
@@ -136,6 +158,9 @@ namespace bs
 		 */
 		void makeAdditive();
 
+		/** Returns the time of the first and last keyframe in the curve. */
+		std::pair<float, float> getTimeRange() const;
+
 		/** Calculates the minimal and maximal value of the curve. */
 		std::pair<T, T> calculateRange() const;
 
@@ -158,6 +183,8 @@ namespace bs
 		BS_SCRIPT_EXPORT(n:KeyFrames,pr:getter)
 		const Vector<TKeyframe<T>>& getKeyFrames() const { return mKeyframes; }
 
+		bool operator== (const TAnimationCurve<T>& rhs) const;
+		bool operator!= (const TAnimationCurve<T>& rhs) const { return !operator==(rhs); }
 	private:
 		friend struct RTTIPlainType<TAnimationCurve<T>>;
 
@@ -207,14 +234,15 @@ namespace bs
 		static const UINT32 CACHE_LOOKAHEAD;
 
 		Vector<KeyFrame> mKeyframes;
-		float mStart;
-		float mEnd;
-		float mLength;
+		float mStart = 0.0f;
+		float mEnd = 0.0f;
+		float mLength = 0.0f;
 	};
 
 #ifdef BS_SBGEN
 	template class BS_SCRIPT_EXPORT(m:Animation,n:AnimationCurve) TAnimationCurve<float>;
 	template class BS_SCRIPT_EXPORT(m:Animation,n:Vector3Curve) TAnimationCurve<Vector3>;
+	template class BS_SCRIPT_EXPORT(m:Animation,n:Vector2Curve) TAnimationCurve<Vector2>;
 	template class BS_SCRIPT_EXPORT(m:Animation,n:QuaternionCurve) TAnimationCurve<Quaternion>;
 	template class BS_SCRIPT_EXPORT(m:Animation,n:IntegerCurve) TAnimationCurve<INT32>;
 #endif
@@ -241,7 +269,7 @@ namespace bs
 	template <class T>
 	struct TNamedAnimationCurve
 	{
-		TNamedAnimationCurve() { }
+		TNamedAnimationCurve() = default;
 
 		/**
 		 * Constructs a new named animation curve.
@@ -277,6 +305,7 @@ namespace bs
 #ifdef BS_SBGEN
 	template class BS_SCRIPT_EXPORT(m:Animation,n:NamedFloatCurve,pl:true) TNamedAnimationCurve<float>;
 	template class BS_SCRIPT_EXPORT(m:Animation,n:NamedVector3Curve,pl:true) TNamedAnimationCurve<Vector3>;
+	template class BS_SCRIPT_EXPORT(m:Animation,n:NamedVector2Curve,pl:true) TNamedAnimationCurve<Vector2>;
 	template class BS_SCRIPT_EXPORT(m:Animation,n:NamedQuaternionCurve,pl:true) TNamedAnimationCurve<Quaternion>;
 	template class BS_SCRIPT_EXPORT(m:Animation,n:NamedIntegerCurve,pl:true) TNamedAnimationCurve<INT32>;
 #endif

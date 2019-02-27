@@ -20,9 +20,8 @@
 
 namespace bs
 {
-	D3D11RenderWindow::D3D11RenderWindow(const RENDER_WINDOW_DESC& desc, UINT32 windowId, ct::D3D11Device& device, 
-		IDXGIFactory* DXGIFactory)
-		:RenderWindow(desc, windowId), mProperties(desc), mDevice(device), mDXGIFactory(DXGIFactory)
+	D3D11RenderWindow::D3D11RenderWindow(const RENDER_WINDOW_DESC& desc, UINT32 windowId)
+		:RenderWindow(desc, windowId), mProperties(desc)
 	{
 
 	}
@@ -90,10 +89,9 @@ namespace bs
 
 	namespace ct
 	{
-	D3D11RenderWindow::D3D11RenderWindow(const RENDER_WINDOW_DESC& desc, UINT32 windowId, D3D11Device& device, IDXGIFactory* DXGIFactory)
-		: RenderWindow(desc, windowId), mProperties(desc), mSyncedProperties(desc), mDevice(device), mDXGIFactory(DXGIFactory), 
-		mSizing(false), mRenderTargetView(nullptr), mBackBuffer(nullptr), mSwapChain(nullptr), mDepthStencilView(nullptr), mIsChild(false), 
-		mRefreshRateNumerator(0), mRefreshRateDenominator(0), mShowOnSwap(false), mWindow(nullptr)
+	D3D11RenderWindow::D3D11RenderWindow(const RENDER_WINDOW_DESC& desc, UINT32 windowId, D3D11Device& device, 
+		IDXGIFactory1* DXGIFactory)
+		: RenderWindow(desc, windowId), mProperties(desc), mSyncedProperties(desc), mDevice(device), mDXGIFactory(DXGIFactory)
 	{ }
 
 	D3D11RenderWindow::~D3D11RenderWindow()
@@ -131,8 +129,8 @@ namespace bs
 		windowDesc.allowResize = mDesc.allowResize;
 		windowDesc.enableDoubleClick = true;
 		windowDesc.fullscreen = mDesc.fullscreen;
-		windowDesc.width = mDesc.videoMode.getWidth();
-		windowDesc.height = mDesc.videoMode.getHeight();
+		windowDesc.width = mDesc.videoMode.width;
+		windowDesc.height = mDesc.videoMode.height;
 		windowDesc.hidden = mDesc.hidden || mDesc.hideUntilSwap;
 		windowDesc.left = mDesc.left;
 		windowDesc.top = mDesc.top;
@@ -146,11 +144,10 @@ namespace bs
 #ifdef BS_STATIC_LIB
 		windowDesc.module = GetModuleHandle(NULL);
 #else
-		windowDesc.module = GetModuleHandle("BansheeD3D11RenderAPI.dll");
+		windowDesc.module = GetModuleHandle("bsfD3D11RenderAPI.dll");
 #endif
 
-		NameValuePairList::const_iterator opt;
-		opt = mDesc.platformSpecific.find("parentWindowHandle");
+		auto opt = mDesc.platformSpecific.find("parentWindowHandle");
 		if (opt != mDesc.platformSpecific.end())
 			windowDesc.parent = (HWND)parseUINT64(opt->second);
 
@@ -161,9 +158,9 @@ namespace bs
 		mIsChild = windowDesc.parent != nullptr;
 		props.isFullScreen = mDesc.fullscreen && !mIsChild;
 
-		if (mDesc.videoMode.isCustom())
+		if (mDesc.videoMode.isCustom)
 		{
-			mRefreshRateNumerator = Math::roundToInt(mDesc.videoMode.getRefreshRate());
+			mRefreshRateNumerator = Math::roundToInt(mDesc.videoMode.refreshRate);
 			mRefreshRateDenominator = 1;
 		}
 		else
@@ -179,7 +176,7 @@ namespace bs
 		UINT32 numOutputs = videoModeInfo.getNumOutputs();
 		if (numOutputs > 0)
 		{
-			UINT32 actualMonitorIdx = std::min(mDesc.videoMode.getOutputIdx(), numOutputs - 1);
+			UINT32 actualMonitorIdx = std::min(mDesc.videoMode.outputIdx, numOutputs - 1);
 			outputInfo = static_cast<const D3D11VideoOutputInfo*>(&videoModeInfo.getOutputInfo(actualMonitorIdx));
 
 			DXGI_OUTPUT_DESC desc;
@@ -391,9 +388,9 @@ namespace bs
 		if (mIsChild)
 			return;
 
-		if (mode.isCustom())
+		if (mode.isCustom)
 		{
-			setFullscreen(mode.getWidth(), mode.getHeight(), mode.getRefreshRate(), mode.getOutputIdx());
+			setFullscreen(mode.width, mode.height, mode.refreshRate, mode.outputIdx);
 			return;
 		}
 
@@ -402,14 +399,14 @@ namespace bs
 		if (numOutputs == 0)
 			return;
 
-		UINT32 actualMonitorIdx = std::min(mode.getOutputIdx(), numOutputs - 1);
+		UINT32 actualMonitorIdx = std::min(mode.outputIdx, numOutputs - 1);
 		const D3D11VideoOutputInfo& outputInfo = static_cast<const D3D11VideoOutputInfo&>(videoModeInfo.getOutputInfo(actualMonitorIdx));
 
 		const D3D11VideoMode& videoMode = static_cast<const D3D11VideoMode&>(mode);
 
 		mProperties.isFullScreen = true;
-		mProperties.width = mode.getWidth();
-		mProperties.height = mode.getHeight();
+		mProperties.width = mode.width;
+		mProperties.height = mode.height;
 
 		mSwapChain->ResizeTarget(&videoMode.getDXGIModeDesc());
 		mSwapChain->SetFullscreenState(true, outputInfo.getDXGIOutput());

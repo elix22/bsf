@@ -224,7 +224,7 @@
  *  - f - Specify the name of the output file(s) for the script object and its potential wrappers. If not specified
  *		  the name of the type will be used for the file. Usable on types only.
  *	- pl - Specify whether the type is plain or not (default is false). Supported values are "true" or "false". Plain
- *		  types don't have script interop objects generated, instead their are generated in script code as plain data
+ *		  types don't have script interop objects generated, instead they are generated in script code as plain data
  *		  types. No methods are exposed, but all data members and constructors are copied. Usable on types only.
  *	- e - Specify that a method is external and is to be appended to some script class. Such methods must be static
  *		  and as the first parameter accept the instance of the class they operate on. Value of this option should be
@@ -251,9 +251,33 @@
 #if BS_COMPILER == BS_COMPILER_CLANG
 	/** @ref scriptBindingMacro */
 	#define BS_SCRIPT_EXPORT(...) __attribute__((annotate("se," #__VA_ARGS__)))
+
+	/** 
+	 * When applied to a parameter, makes it a variable argument parameter in the scripting interface (if supported
+	 * by the scripting language.
+	 */
+	#define BS_PARAMS __attribute__((annotate("params")))
+
+	/** 
+	 * When applied to a parameter or a field of ResourceHandle type, makes that element be exported as a raw resource in
+	 * script code.
+	 */
+	#define BS_NORREF __attribute__((annotate("norref")))
 #else
 	/** @ref scriptBindingMacro */
 	#define BS_SCRIPT_EXPORT(...)
+
+	/** 
+	 * When applied to a parameter, makes it a variable argument parameter in the scripting interface (if supported
+	 * by the scripting language).
+	 */
+	#define BS_PARAMS
+
+	/** 
+	 * When applied to a parameter or a field of ResourceHandle type, makes that element be exported as a raw resource in
+	 * script code.
+	 */
+	#define BS_NORREF
 #endif
 
 // Short-hand names for various built-in types
@@ -279,5 +303,6 @@
 #include "Utility/BsEvent.h"
 #include "Utility/BsPlatformUtility.h"
 #include "Utility/BsNonCopyable.h"
+#include "Utility/BsSmallVector.h"
 #include "FileSystem/BsPath.h"
 #include "Error/BsCrashHandler.h"

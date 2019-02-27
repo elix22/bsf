@@ -29,7 +29,7 @@ set(BS_GLRENDERAPI_INC_NOFILTER
 	"BsGLRenderAPI.h"
 	"BsGLRenderAPIFactory.h"
 	"BsGLUtil.h"
-	"BsGLBuffer.h"
+	"BsGLHardwareBuffer.h"
 	"BsGLCommandBuffer.h"
 	"BsGLCommandBufferManager.h"
 	"BsGLTextureView.h"
@@ -58,7 +58,7 @@ set(BS_GLRENDERAPI_SRC_NOFILTER
 	"BsGLRenderAPI.cpp"
 	"BsGLRenderAPIFactory.cpp"
 	"BsGLPlugin.cpp"
-	"BsGLBuffer.cpp"
+	"BsGLHardwareBuffer.cpp"
 	"BsGLCommandBuffer.cpp"
 	"BsGLCommandBufferManager.cpp"
 	"BsGLTextureView.cpp"
@@ -85,6 +85,7 @@ set(BS_GLRENDERAPI_SRC_WIN32
 	"Win32/BsWin32RenderWindow.cpp"
 	"Win32/BsWin32VideoModeInfo.cpp"
 	"glew.cpp"
+	"Win32/BsGLWin32Resource.rc"
 )
 
 set(BS_GLRENDERAPI_INC_LINUX

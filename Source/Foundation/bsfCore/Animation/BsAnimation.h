@@ -27,7 +27,7 @@ namespace bs
 	/** Contains information about a currently playing animation clip. */
 	struct BS_SCRIPT_EXPORT(pl:true,m:Animation) AnimationClipState
 	{
-		AnimationClipState() { }
+		AnimationClipState() = default;
 
 		/** Layer the clip is playing on. Multiple clips can be played simulatenously on different layers. */
 		UINT32 layer = 0; 
@@ -90,30 +90,30 @@ namespace bs
 	/** Internal information about a single playing animation clip within Animation. */
 	struct AnimationClipInfo
 	{
-		AnimationClipInfo();
+		AnimationClipInfo() = default;
 		AnimationClipInfo(const HAnimationClip& clip);
 
 		HAnimationClip clip;
 		AnimationClipState state;
-		AnimPlaybackType playbackType;
+		AnimPlaybackType playbackType = AnimPlaybackType::Normal;
 
-		float fadeDirection;
-		float fadeTime;
-		float fadeLength;
+		float fadeDirection = 0.0f;
+		float fadeTime = 0.0f;
+		float fadeLength = 0.0f;
 
 		/** 
 		 * Version of the animation curves used by the AnimationProxy. Used to detecting the internal animation curves
 		 * changed. 
 		 */
-		UINT64 curveVersion; 
-		UINT32 layerIdx; /**< Layer index this clip belongs to in AnimationProxy structure. */
-		UINT32 stateIdx; /**< State index this clip belongs to in AnimationProxy structure. */
+		UINT64 curveVersion = 0; 
+		UINT32 layerIdx = (UINT32)-1; /**< Layer index this clip belongs to in AnimationProxy structure. */
+		UINT32 stateIdx = (UINT32)-1; /**< State index this clip belongs to in AnimationProxy structure. */
 	};
 
 	/** Represents an animation clip used in 1D blending. Each clip has a position on the number line. */
 	struct BS_CORE_EXPORT BS_SCRIPT_EXPORT(pl:true,m:Animation) BlendClipInfo
 	{
-		BlendClipInfo() { }
+		BlendClipInfo() = default;
 
 		HAnimationClip clip;
 		float position = 0.0f;
@@ -325,14 +325,20 @@ namespace bs
 		/** Determines the speed for all animations. The default value is 1.0f. Use negative values to play-back in reverse. */
 		void setSpeed(float speed);
 
-		/** Sets bounds that will be used for animation culling, if enabled. Bounds must be in world space. */
+		/** Determines bounds that will be used for animation culling, if enabled. Bounds must be in world space. */
 		void setBounds(const AABox& bounds);
+
+		/** @copydoc setBounds */
+		const AABox& getBounds() const { return mBounds; }
 
 		/** 
 		 * When enabled, animation that is not in a view of any camera will not be evaluated. View determination is done by
 		 * checking the bounds provided in setBounds().
 		 */
 		void setCulling(bool cull);
+
+		/** @copydoc setCulling */
+		bool getCulling() const { return mCull; }
 
 		/** 
 		 * Plays the specified animation clip. 
@@ -527,11 +533,11 @@ namespace bs
 		void notifyResourceChanged(const HResource& resource) override;
 
 		UINT64 mId;
-		AnimWrapMode mDefaultWrapMode;
-		float mDefaultSpeed;
+		AnimWrapMode mDefaultWrapMode = AnimWrapMode::Loop;
+		float mDefaultSpeed = 1.0f;
 		AABox mBounds;
-		bool mCull;
-		AnimDirtyState mDirty;
+		bool mCull = true;
+		AnimDirtyState mDirty = AnimDirtyStateFlag::All;
 
 		SPtr<Skeleton> mSkeleton;
 		SkeletonMask mSkeletonMask;
@@ -540,7 +546,7 @@ namespace bs
 		Vector<AnimationClipInfo> mClipInfos;
 		UnorderedMap<UINT64, AnimatedSceneObject> mSceneObjects;
 		Vector<float> mGenericCurveOutputs;
-		bool mGenericCurveValuesValid;
+		bool mGenericCurveValuesValid = false;
 		AnimSampleStep mSampleStep = AnimSampleStep::None;
 
 		// Animation thread only
