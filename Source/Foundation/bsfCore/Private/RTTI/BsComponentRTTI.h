@@ -43,6 +43,9 @@ namespace bs
 				GameObjectHandleBase handle = GameObjectManager::instance().registerObject(compPtr);
 				coreContext->goState->registerObject(deserializationData.originalId, handle);
 			}
+
+			if(comp->mUUID.empty() || coreContext->goState->getUseNewUUIDs())
+				comp->mUUID = UUIDGenerator::generateRandom();
 			
 			comp->mRTTIData = nullptr;
 		}

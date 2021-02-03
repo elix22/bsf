@@ -4,6 +4,8 @@
 
 #include "BsCorePrerequisites.h"
 #include "Reflection/BsRTTIType.h"
+#include "RTTI/BsStringRTTI.h"
+#include "RTTI/BsUUIDRTTI.h"
 #include "Scene/BsGameObject.h"
 #include "Scene/BsSceneObject.h"
 #include "Scene/BsGameObjectManager.h"
@@ -25,12 +27,15 @@ namespace bs
 	class BS_CORE_EXPORT GameObjectRTTI : public RTTIType<GameObject, IReflectable, GameObjectRTTI>
 	{
 	private:
-		String& getName(GameObject* obj) { return obj->mName; }
-		void setName(GameObject* obj, String& name) { obj->mName = name; }
+		BS_BEGIN_RTTI_MEMBERS
+			BS_RTTI_MEMBER_PLAIN(mName, 1)
+			BS_RTTI_MEMBER_PLAIN(mLinkId, 2)
+			BS_RTTI_MEMBER_PLAIN(mUUID, 3)
+		BS_END_RTTI_MEMBERS
 
 		UINT64& getInstanceID(GameObject* obj) { return obj->mInstanceData->mInstanceId; }
-		void setInstanceID(GameObject* obj, UINT64& instanceId) 
-		{  
+		void setInstanceID(GameObject* obj, UINT64& instanceId)
+		{
 			// We record the ID for later use. Any child RTTI of GameObject must call GameObjectManager::registerObject
 			// with this ID, so we know how to map deserialized GO handles to live objects, otherwise the handle
 			// references will get broken.
@@ -40,26 +45,10 @@ namespace bs
 			deserializationData.originalId = instanceId;
 		}
 
-		UINT32& getLinkId(GameObject* obj) { return obj->mLinkId; }
-		void setLinkId(GameObject* obj, UINT32& linkId) { obj->mLinkId = linkId; }
-
-	public:
-		/**	Helper method used for creating Component objects used during deserialization. */
-		template <typename T>
-		static SPtr<T> createGameObject()
-		{
-			SPtr<T> component = SceneObject::createEmptyComponent<T>();
-			component->mRTTIData = component;
-
-			return component;
-		}
-
 	public:
 		GameObjectRTTI()
 		{
 			addPlainField("mInstanceID", 0, &GameObjectRTTI::getInstanceID, &GameObjectRTTI::setInstanceID);
-			addPlainField("mName", 1, &GameObjectRTTI::getName, &GameObjectRTTI::setName);
-			addPlainField("mLinkId", 2, &GameObjectRTTI::getLinkId, &GameObjectRTTI::setLinkId);
 		}
 
 		void onDeserializationStarted(IReflectable* obj, SerializationContext* context) override

@@ -16,20 +16,16 @@ namespace bs
 		struct META_FirstEntry {};																							\
 		static void META_GetPrevEntries(Vector<ReflectableTypeInfo>& entries, META_FirstEntry id) { }						\
 																															\
-		typedef META_FirstEntry 
+		typedef META_FirstEntry
 
-	/** Registers a new entry in the component lookup table. */
+	/** Registers a new entry in the reflectable wrapper lookup table. */
 #define ADD_ENTRY(ReflectableType, ScriptType)																				\
 		META_Entry_##ScriptType;																							\
 																															\
 	public:																													\
 		static MonoObject* create##ScriptType(const SPtr<IReflectable>& reflectable)										\
 		{																													\
-			MonoObject* managedInstance = ScriptType::getMetaData()->scriptClass->createInstance();							\
-			ScriptType* scriptReflectable = new (bs_alloc<ScriptType>())													\
-				ScriptType(managedInstance, std::static_pointer_cast<ReflectableType>(reflectable));						\
-																															\
-			return managedInstance;																							\
+			return ScriptType::create(std::static_pointer_cast<ReflectableType>(reflectable));								\
 		}																													\
 																															\
 		struct META_NextEntry_##ScriptType {};																				\
@@ -48,7 +44,7 @@ namespace bs
 																															\
 		typedef META_NextEntry_##ScriptType
 
-	/** End the definition for the builtin component lookup table. */
+	/** End the definition for the  reflectable wrapper lookup table. */
 #define LOOKUP_END																											\
 		META_LastEntry;																										\
 																															\

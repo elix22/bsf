@@ -21,12 +21,22 @@ namespace bs
         public static string ActiveSceneName { get { return activeSceneName; } }
 
         /// <summary>
+        /// Event that triggers when the active scene is about to be unloaded.
+        /// </summary>
+        public static event Action<UUID> OnSceneUnload;
+
+        /// <summary>
+        /// Event that triggers when a new scene is loaded and has been made active.
+        /// </summary>
+        public static event Action<UUID> OnSceneLoad;
+
+        /// <summary>
         /// Returns the UUID of the scene prefab. This is empty if scene hasn't been saved yet.
         /// </summary>
         internal static UUID ActiveSceneUUID { get { return activeSceneUUID; } }
 
         /// <summary>
-        /// Checks is the loaded scene a generic scene object group, instead of an actual scene. 
+        /// Checks is the loaded scene a generic scene object group, instead of an actual scene.
         /// <see cref="Prefab.IsScene"/>.
         /// </summary>
         internal static bool IsGenericPrefab { get { return isGenericPrefab; } }
@@ -68,6 +78,9 @@ namespace bs
         /// </summary>
         public static void Clear()
         {
+            if(activeSceneUUID != UUID.Empty)
+                OnSceneUnload?.Invoke(activeSceneUUID);
+
             Internal_ClearScene();
 
             activeSceneUUID = UUID.Empty;
@@ -99,13 +112,14 @@ namespace bs
         {
             Clear();
 
-            activateOnLoadScene = Resources.LoadAsync<Prefab>(path); 
+            activateOnLoadScene = Resources.LoadAsync<Prefab>(path);
 
             if(activateOnLoadScene != null && activateOnLoadScene.IsLoaded)
                 SetActive(activateOnLoadScene.Value);
 
             return activateOnLoadScene;
         }
+
         /// <summary>
         /// Sets the currently active scene to the provided scene.
         /// </summary>
@@ -121,6 +135,8 @@ namespace bs
                 isGenericPrefab = !scene.IsScene;
 
                 Internal_SetActiveScene(scene.GetCachedPtr());
+
+                OnSceneLoad?.Invoke(activeSceneUUID);
             }
         }
 

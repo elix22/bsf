@@ -39,7 +39,7 @@ namespace bs
 		/** @copydoc ScriptObjectBase::_onManagedInstanceDeleted */
 		void _onManagedInstanceDeleted(bool assemblyRefresh) override;
 
-		/** @copydoc ScriptObjectBase::_createManagedInstance */
+		/** @copydoc ScriptObject::_createManagedInstance */
 		MonoObject* _createManagedInstance(bool construct) override;
 
 		/** @copydoc ScriptObjectBase::_clearManagedInstance */
@@ -59,6 +59,7 @@ namespace bs
 		static MonoString* internal_getName(ScriptSceneObject* nativeInstance);
 		static void internal_setActive(ScriptSceneObject* nativeInstance, bool value);
 		static bool internal_getActive(ScriptSceneObject* nativeInstance);
+		static bool internal_hasFlag(ScriptSceneObject* nativeInstance, UINT32 flag);
 
 		static void internal_setMobility(ScriptSceneObject* nativeInstance, int value);
 		static int internal_getMobility(ScriptSceneObject* nativeInstance);

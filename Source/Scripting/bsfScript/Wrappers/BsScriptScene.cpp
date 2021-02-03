@@ -74,10 +74,7 @@ namespace bs
 		{
 			// If scene replace current root node, otherwise just append to the current root node
 			if (prefab->isScene())
-			{
-				HSceneObject root = prefab->instantiate();
-				gSceneManager().setRootNode(root);
-			}
+				gSceneManager().loadScene(prefab);
 			else
 			{
 				gSceneManager().clearScene();
@@ -86,7 +83,7 @@ namespace bs
 		}
 		else
 		{
-			LOGERR("Attempting to activate a scene that hasn't finished loading yet.");
+			BS_LOG(Error, Scene, "Attempting to activate a scene that hasn't finished loading yet.");
 		}
 	}
 

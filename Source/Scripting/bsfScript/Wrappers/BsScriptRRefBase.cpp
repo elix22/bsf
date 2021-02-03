@@ -109,7 +109,7 @@ namespace bs
 			if (gApplication().isEditor())
 				loadFlags |= ResourceLoadFlag::KeepSourceData;
 
-			const HResource loadedResource = gResources().loadFromUUID(thisPtr->getHandle().getUUID(), loadFlags);
+			const HResource loadedResource = gResources().loadFromUUID(thisPtr->getHandle().getUUID(), false, loadFlags);
 			thisPtr->mScriptResource = ScriptResourceManager::instance().getScriptResource(loadedResource, true);
 		}
 
@@ -133,13 +133,9 @@ namespace bs
 			return nullptr; // Not a valid type
 
 		::MonoClass* rrefType = nullptr;
-		if(resType != ScriptResource::getMetaData()->scriptClass)
-		{
-			if (!resType->isSubClassOf(ScriptResource::getMetaData()->scriptClass))
-				return nullptr; // Not a resource type
-
+		if(resType == ScriptResource::getMetaData()->scriptClass ||
+			resType->isSubClassOf(ScriptResource::getMetaData()->scriptClass))
 			rrefType = bindGenericParam(rawResType);
-		}
 
 		ScriptRRefBase* castRRefBase = create(thisPtr->mResource, rrefType);
 		if(castRRefBase)

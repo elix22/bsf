@@ -86,10 +86,20 @@ namespace bs
         Order				= 1 << 12,
 
         /// <summary>
-        /// Singifies that the field containing a class/struct should display the child fields of that objects as if they
+        /// Signifies that the field containing a class/struct should display the child fields of that objects as if they
         /// were part of the parent class in the inspector.
         /// </summary>
-        Inline				= 1 << 13
+        Inline				= 1 << 13,
+
+        /// <summary>
+        /// Signifies that a <see cref="RRef{T}"/> should be loaded when assigned to field through the inspector.
+        /// </summary>
+        LoadOnAssign        = 1 << 14,
+
+        /// <summary>
+        /// Field containing a color that supports high dynamic range.
+        /// </summary>
+        HDR                 = 1 << 15,
     }
 
     /// <summary>
@@ -163,7 +173,7 @@ namespace bs
         }
 
         /// <summary>
-        /// Returns a serializable property for the field. 
+        /// Returns a serializable property for the field.
         /// </summary>
         /// <returns>Serializable property that allows you to manipulate contents of the field.</returns>
         public SerializableProperty GetProperty()
@@ -171,15 +181,14 @@ namespace bs
             SerializableProperty.Getter getter = () =>
             {
                 object parentObject = parent.GetReferencedObject();
-                
+
                 if (parentObject != null)
                     return Internal_GetValue(mCachedPtr, parentObject);
                 else
                     return null;
             };
 
-            bool applyOnChange = Flags.HasFlag(SerializableFieldAttributes.ApplyOnDirty) || 
-                                 Flags.HasFlag(SerializableFieldAttributes.PassByCopy);
+            bool parentApplyOnChildChanges = parent.parentProperty?.ApplyOnChildChanges ?? false;
 
             SerializableProperty.Setter setter = (object value) =>
             {
@@ -190,13 +199,17 @@ namespace bs
                     Internal_SetValue(mCachedPtr, parentObject, value);
 
                     // If value type we cannot just modify the parent object because it's just a copy
-                    if ((applyOnChange || parentObject.GetType().IsValueType) && parent.parentProperty != null)
+                    if ((parentApplyOnChildChanges || parentObject.GetType().IsValueType) && parent.parentProperty != null)
                         parent.parentProperty.SetValue(parentObject);
                 }
             };
 
+            bool applyOnChildChanges = Flags.HasFlag(SerializableFieldAttributes.ApplyOnDirty) ||
+                                       Flags.HasFlag(SerializableFieldAttributes.PassByCopy) ||
+                                       parentApplyOnChildChanges;
+
             SerializableProperty newProperty = Internal_CreateProperty(mCachedPtr);
-            newProperty.Construct(type, internalType, getter, setter);
+            newProperty.Construct(type, internalType, getter, setter, applyOnChildChanges);
 
             return newProperty;
         }
@@ -238,7 +251,7 @@ namespace bs
         /// <summary>
         /// If true, number fields will be displayed as sliders instead of regular input boxes.
         /// </summary>
-        public bool DisplayAsSlider; 
+        public bool DisplayAsSlider;
 
         /// <summary>
         /// Name of the category to display in inspector, if the member is part of one.

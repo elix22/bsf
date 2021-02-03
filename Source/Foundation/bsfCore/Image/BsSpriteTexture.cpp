@@ -51,10 +51,10 @@ namespace bs
 		case SpriteAnimationPlayback::Normal:
 			t = Math::clamp(t, 0.0f, duration);
 			break;
-		case SpriteAnimationPlayback::Loop: 
+		case SpriteAnimationPlayback::Loop:
 			t = Math::repeat(t, duration);
 			break;
-		case SpriteAnimationPlayback::PingPong: 
+		case SpriteAnimationPlayback::PingPong:
 			t = Math::pingPong(t, duration);
 			break;
 		}
@@ -94,6 +94,15 @@ namespace bs
 		return tex != nullptr && tex.isLoaded(false) && tex->getTexture() != nullptr && tex->getTexture().isLoaded(false);
 	}
 
+	void SpriteTexture::setTexture(const HTexture& texture)
+	{
+		removeResourceDependency(mAtlasTexture);
+		mAtlasTexture = texture;
+		addResourceDependency(mAtlasTexture);
+
+		markDependenciesDirty();
+	}
+
 	UINT32 SpriteTexture::getWidth() const
 	{
 		return Math::roundToInt(mAtlasTexture->getProperties().getWidth() * mUVScale.x);
@@ -104,9 +113,26 @@ namespace bs
 		return Math::roundToInt(mAtlasTexture->getProperties().getHeight() * mUVScale.y);
 	}
 
+	UINT32 SpriteTexture::getFrameWidth() const
+	{
+		return getWidth() / std::max(1U, mAnimation.numColumns);
+	}
+
+	UINT32 SpriteTexture::getFrameHeight() const
+	{
+		return getHeight() / std::max(1U, mAnimation.numRows);
+	}
+
 	void SpriteTexture::_markCoreDirty()
 	{
 		markCoreDirty();
+	}
+
+	void SpriteTexture::initialize()
+	{
+		addResourceDependency(mAtlasTexture);
+
+		Resource::initialize();
 	}
 
 	SPtr<ct::CoreObject> SpriteTexture::createCore() const
@@ -115,7 +141,7 @@ namespace bs
 		if(mAtlasTexture.isLoaded())
 			texturePtr = mAtlasTexture->getCore();
 
-		ct::SpriteTexture* spriteTexture = new (bs_alloc<ct::SpriteTexture>()) ct::SpriteTexture(mUVOffset, mUVScale, 
+		ct::SpriteTexture* spriteTexture = new (bs_alloc<ct::SpriteTexture>()) ct::SpriteTexture(mUVOffset, mUVScale,
 			std::move(texturePtr), mAnimation, mPlayback);
 
 		SPtr<ct::SpriteTexture> spriteTexPtr = bs_shared_ptr<ct::SpriteTexture>(spriteTexture);
@@ -126,19 +152,13 @@ namespace bs
 
 	CoreSyncData SpriteTexture::syncToCore(FrameAlloc* allocator)
 	{
-		UINT32 size = coreSyncGetElemSize(*this);
+		UINT32 size = csync_size(*this);
 
 		UINT8* buffer = allocator->alloc(size);
-		char* dataPtr = (char*)buffer;
-		dataPtr = coreSyncWriteElem(*this, dataPtr);
+		Bitstream stream(buffer, size);
+		csync_write(*this, stream);
 
 		return CoreSyncData(buffer, size);
-	}
-
-	void SpriteTexture::getResourceDependencies(FrameVector<HResource>& dependencies) const
-	{
-		if (mAtlasTexture != nullptr)
-			dependencies.push_back(mAtlasTexture);
 	}
 
 	void SpriteTexture::getCoreDependencies(Vector<CoreObject*>& dependencies)
@@ -194,7 +214,6 @@ namespace bs
 			(new (bs_alloc<SpriteTexture>()) SpriteTexture(Vector2(0.0f, 0.0f), Vector2(1.0f, 1.0f), HTexture()));
 
 		texturePtr->_setThisPtr(texturePtr);
-		texturePtr->initialize();
 
 		return texturePtr;
 	}
@@ -221,8 +240,8 @@ namespace bs
 
 		void SpriteTexture::syncToCore(const CoreSyncData& data)
 		{
-			char* dataPtr = (char*)data.getBuffer();
-			dataPtr = coreSyncReadElem(*this, dataPtr);
+			Bitstream stream(data.getBuffer(), data.getBufferSize());
+			csync_read(*this, stream);
 		}
 	}
 }

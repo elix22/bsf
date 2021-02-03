@@ -43,6 +43,7 @@ shader Surface
 	
 		cbuffer Params
 		{
+			[hideInInspector]
 			float gInvDepthRange = 1.0f;
 		};
 	

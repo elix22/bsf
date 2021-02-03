@@ -8,11 +8,12 @@
 #include "BsScriptResourceManager.h"
 #include "Wrappers/BsScriptRRefBase.h"
 #include "Wrappers/BsScriptVector.h"
-#include "BsScriptColorGradient.generated.h"
 #include "Wrappers/BsScriptColor.h"
 #include "../../../Foundation/bsfCore/Material/BsMaterial.h"
 #include "../../../Foundation/bsfCore/Material/BsShader.h"
+#include "BsScriptShaderVariation.generated.h"
 #include "Wrappers/BsScriptVector.h"
+#include "BsScriptColorGradientHDR.generated.h"
 #include "BsScriptTAnimationCurve.generated.h"
 #include "Wrappers/BsScriptVector.h"
 #include "../../../Foundation/bsfCore/Image/BsTexture.h"
@@ -30,8 +31,10 @@ namespace bs
 	{
 		metaData.scriptClass->addInternalCall("Internal_GetRef", (void*)&ScriptMaterial::Internal_getRef);
 		metaData.scriptClass->addInternalCall("Internal_setShader", (void*)&ScriptMaterial::Internal_setShader);
+		metaData.scriptClass->addInternalCall("Internal_setVariation", (void*)&ScriptMaterial::Internal_setVariation);
 		metaData.scriptClass->addInternalCall("Internal_clone", (void*)&ScriptMaterial::Internal_clone);
 		metaData.scriptClass->addInternalCall("Internal_getShader", (void*)&ScriptMaterial::Internal_getShader);
+		metaData.scriptClass->addInternalCall("Internal_getVariation", (void*)&ScriptMaterial::Internal_getVariation);
 		metaData.scriptClass->addInternalCall("Internal_setFloat", (void*)&ScriptMaterial::Internal_setFloat);
 		metaData.scriptClass->addInternalCall("Internal_setFloatCurve", (void*)&ScriptMaterial::Internal_setFloatCurve);
 		metaData.scriptClass->addInternalCall("Internal_setColor", (void*)&ScriptMaterial::Internal_setColor);
@@ -50,6 +53,7 @@ namespace bs
 		metaData.scriptClass->addInternalCall("Internal_getVec4", (void*)&ScriptMaterial::Internal_getVec4);
 		metaData.scriptClass->addInternalCall("Internal_getMat3", (void*)&ScriptMaterial::Internal_getMat3);
 		metaData.scriptClass->addInternalCall("Internal_getMat4", (void*)&ScriptMaterial::Internal_getMat4);
+		metaData.scriptClass->addInternalCall("Internal_isAnimated", (void*)&ScriptMaterial::Internal_isAnimated);
 		metaData.scriptClass->addInternalCall("Internal_create", (void*)&ScriptMaterial::Internal_create);
 		metaData.scriptClass->addInternalCall("Internal_create0", (void*)&ScriptMaterial::Internal_create0);
 		metaData.scriptClass->addInternalCall("Internal_setTexture", (void*)&ScriptMaterial::Internal_setTexture);
@@ -79,6 +83,16 @@ namespace bs
 		if(scriptshader != nullptr)
 			tmpshader = static_resource_cast<Shader>(scriptshader->getHandle());
 		thisPtr->getHandle()->setShader(tmpshader);
+	}
+
+	void ScriptMaterial::Internal_setVariation(ScriptMaterial* thisPtr, MonoObject* variation)
+	{
+		SPtr<ShaderVariation> tmpvariation;
+		ScriptShaderVariation* scriptvariation;
+		scriptvariation = ScriptShaderVariation::toNative(variation);
+		if(scriptvariation != nullptr)
+			tmpvariation = scriptvariation->getInternal();
+		thisPtr->getHandle()->setVariation(*tmpvariation);
 	}
 
 	MonoObject* ScriptMaterial::Internal_clone(ScriptMaterial* thisPtr)
@@ -113,6 +127,17 @@ namespace bs
 		return __output;
 	}
 
+	MonoObject* ScriptMaterial::Internal_getVariation(ScriptMaterial* thisPtr)
+	{
+		SPtr<ShaderVariation> tmp__output = bs_shared_ptr_new<ShaderVariation>();
+		*tmp__output = thisPtr->getHandle()->getVariation();
+
+		MonoObject* __output;
+		__output = ScriptShaderVariation::create(tmp__output);
+
+		return __output;
+	}
+
 	void ScriptMaterial::Internal_setFloat(ScriptMaterial* thisPtr, MonoString* name, float value, uint32_t arrayIdx)
 	{
 		String tmpname;
@@ -143,9 +168,9 @@ namespace bs
 	{
 		String tmpname;
 		tmpname = MonoUtil::monoToString(name);
-		SPtr<ColorGradient> tmpvalue;
-		ScriptColorGradient* scriptvalue;
-		scriptvalue = ScriptColorGradient::toNative(value);
+		SPtr<ColorGradientHDR> tmpvalue;
+		ScriptColorGradientHDR* scriptvalue;
+		scriptvalue = ScriptColorGradientHDR::toNative(value);
 		if(scriptvalue != nullptr)
 			tmpvalue = scriptvalue->getInternal();
 		thisPtr->getHandle()->setColorGradient(tmpname, *tmpvalue, arrayIdx);
@@ -224,13 +249,13 @@ namespace bs
 
 	MonoObject* ScriptMaterial::Internal_getColorGradient(ScriptMaterial* thisPtr, MonoString* name, uint32_t arrayIdx)
 	{
-		SPtr<ColorGradient> tmp__output = bs_shared_ptr_new<ColorGradient>();
+		SPtr<ColorGradientHDR> tmp__output = bs_shared_ptr_new<ColorGradientHDR>();
 		String tmpname;
 		tmpname = MonoUtil::monoToString(name);
 		*tmp__output = thisPtr->getHandle()->getColorGradient(tmpname, arrayIdx);
 
 		MonoObject* __output;
-		__output = ScriptColorGradient::create(tmp__output);
+		__output = ScriptColorGradientHDR::create(tmp__output);
 
 		return __output;
 	}
@@ -283,6 +308,19 @@ namespace bs
 		tmp__output = thisPtr->getHandle()->getMat4(tmpname, arrayIdx);
 
 		*__output = tmp__output;
+	}
+
+	bool ScriptMaterial::Internal_isAnimated(ScriptMaterial* thisPtr, MonoString* name, uint32_t arrayIdx)
+	{
+		bool tmp__output;
+		String tmpname;
+		tmpname = MonoUtil::monoToString(name);
+		tmp__output = thisPtr->getHandle()->isAnimated(tmpname, arrayIdx);
+
+		bool __output;
+		__output = tmp__output;
+
+		return __output;
 	}
 
 	void ScriptMaterial::Internal_create(MonoObject* managedInstance)

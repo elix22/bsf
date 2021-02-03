@@ -28,6 +28,7 @@ namespace bs
 		m = bs_new<Pimpl>();
 		m->isModal = desc.modal;
 		m->isHidden = desc.hidden;
+		bool shouldFocus = true;
 
 		HMONITOR hMonitor = desc.monitor;
 		if (!desc.external)
@@ -248,6 +249,7 @@ namespace bs
 					// immediately deactivate it and make sure the modal windows stay on top.
 					if (!sModalWindowStack.empty())
 					{
+						shouldFocus = false;
 						windowsToDisable.push_back(m->hWnd);
 
 						for (auto window : sModalWindowStack)
@@ -264,11 +266,9 @@ namespace bs
 			for (auto& entry : windowsToBringToFront)
 				BringWindowToTop(entry);
 
-			SetFocus(m->hWnd);
+			if(shouldFocus)
+				SetFocus(m->hWnd);
 		}
-
-		if(desc.hidden)
-			setHidden(true);
 
 		bs_frame_clear();
 	}
@@ -399,7 +399,15 @@ namespace bs
 			ShowWindow(m->hWnd, SW_MAXIMIZE);
 
 		if(m->isHidden)
+		{
 			ShowWindow(m->hWnd, SW_HIDE);
+
+			// Note: Doing a maximize followed by hide causes the window to lose focus, and the focus will fail to
+			// restore when user clicks on the window, requiring him to alt-tab to re-gain focus. So we force focus here.
+			// The other option is to delay maximizing until a hidden window is shown, but this requires us to manually
+			// calculate the window size and notify the parent render window so it can immediately update the swap chain.
+			SetFocus(m->hWnd);
+		}
 	}
 
 	void Win32Window::restore()
@@ -408,7 +416,15 @@ namespace bs
 			ShowWindow(m->hWnd, SW_RESTORE);
 
 		if(m->isHidden)
+		{
 			ShowWindow(m->hWnd, SW_HIDE);
+
+			// Note: Doing a restore followed by hide causes the window to lose focus, and the focus will fail to
+			// restore when user clicks on the window, requiring him to alt-tab to re-gain focus. So we force focus here.
+			// The other option is to delay restoring until a hidden window is shown, but this requires us to manually
+			// calculate the window size and notify the parent render window so it can immediately update the swap chain.
+			SetFocus(m->hWnd);
+		}
 	}
 
 	void Win32Window::_windowMovedOrResized()

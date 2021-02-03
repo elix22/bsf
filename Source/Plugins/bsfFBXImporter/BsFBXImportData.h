@@ -124,7 +124,7 @@ namespace bs
 	/** All information required for creating an animation clip. */
 	struct FBXAnimationClipData
 	{
-		FBXAnimationClipData(const String& name, bool isAdditive, UINT32 sampleRate, const SPtr<AnimationCurves>& curves, 
+		FBXAnimationClipData(const String& name, bool isAdditive, UINT32 sampleRate, const SPtr<AnimationCurves>& curves,
 			const SPtr<RootMotion>& rootMotion)
 			:name(name), isAdditive(isAdditive), sampleRate(sampleRate), curves(curves), rootMotion(rootMotion)
 		{ }
@@ -175,9 +175,6 @@ namespace bs
 		UnorderedMap<FbxMesh*, UINT32> meshMap;
 
 		Vector<FBXAnimationClip> clips;
-
-		float scaleFactor = 1.0f;
-		Matrix4 globalScale = Matrix4::IDENTITY;
 	};
 
 	/** @} */

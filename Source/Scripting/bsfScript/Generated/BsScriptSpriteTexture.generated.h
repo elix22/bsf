@@ -8,10 +8,9 @@
 #include "../../../Foundation/bsfCore/Image/BsSpriteTexture.h"
 #include "../../../Foundation/bsfCore/Image/BsSpriteTexture.h"
 
+namespace bs { class SpriteTexture; }
 namespace bs
 {
-	class SpriteTexture;
-
 	class BS_SCR_BE_EXPORT ScriptSpriteTexture : public TScriptResource<ScriptSpriteTexture, SpriteTexture>
 	{
 	public:
@@ -28,6 +27,8 @@ namespace bs
 		static MonoObject* Internal_getTexture(ScriptSpriteTexture* thisPtr);
 		static uint32_t Internal_getWidth(ScriptSpriteTexture* thisPtr);
 		static uint32_t Internal_getHeight(ScriptSpriteTexture* thisPtr);
+		static uint32_t Internal_getFrameWidth(ScriptSpriteTexture* thisPtr);
+		static uint32_t Internal_getFrameHeight(ScriptSpriteTexture* thisPtr);
 		static void Internal_setOffset(ScriptSpriteTexture* thisPtr, Vector2* offset);
 		static void Internal_getOffset(ScriptSpriteTexture* thisPtr, Vector2* __output);
 		static void Internal_setScale(ScriptSpriteTexture* thisPtr, Vector2* scale);

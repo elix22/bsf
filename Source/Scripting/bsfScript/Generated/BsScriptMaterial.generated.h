@@ -5,19 +5,19 @@
 #include "BsScriptEnginePrerequisites.h"
 #include "Wrappers/BsScriptResource.h"
 #include "Math/BsVector2.h"
-#include "../../../Foundation/bsfUtility/Image/BsColorGradient.h"
 #include "Image/BsColor.h"
 #include "Math/BsMatrix4.h"
+#include "Math/BsMatrix3.h"
+#include "../../../Foundation/bsfCore/Material/BsShaderVariation.h"
 #include "Math/BsVector4.h"
+#include "../../../Foundation/bsfUtility/Image/BsColorGradient.h"
 #include "../../../Foundation/bsfCore/Animation/BsAnimationCurve.h"
 #include "Math/BsVector3.h"
-#include "Math/BsMatrix3.h"
 
+namespace bs { class Material; }
+namespace bs { class MaterialEx; }
 namespace bs
 {
-	class Material;
-	class MaterialEx;
-
 	class BS_SCR_BE_EXPORT ScriptMaterial : public TScriptResource<ScriptMaterial, Material>
 	{
 	public:
@@ -31,8 +31,10 @@ namespace bs
 		static MonoObject* Internal_getRef(ScriptMaterial* thisPtr);
 
 		static void Internal_setShader(ScriptMaterial* thisPtr, MonoObject* shader);
+		static void Internal_setVariation(ScriptMaterial* thisPtr, MonoObject* variation);
 		static MonoObject* Internal_clone(ScriptMaterial* thisPtr);
 		static MonoObject* Internal_getShader(ScriptMaterial* thisPtr);
+		static MonoObject* Internal_getVariation(ScriptMaterial* thisPtr);
 		static void Internal_setFloat(ScriptMaterial* thisPtr, MonoString* name, float value, uint32_t arrayIdx);
 		static void Internal_setFloatCurve(ScriptMaterial* thisPtr, MonoString* name, MonoObject* value, uint32_t arrayIdx);
 		static void Internal_setColor(ScriptMaterial* thisPtr, MonoString* name, Color* value, uint32_t arrayIdx);
@@ -51,6 +53,7 @@ namespace bs
 		static void Internal_getVec4(ScriptMaterial* thisPtr, MonoString* name, uint32_t arrayIdx, Vector4* __output);
 		static void Internal_getMat3(ScriptMaterial* thisPtr, MonoString* name, uint32_t arrayIdx, Matrix3* __output);
 		static void Internal_getMat4(ScriptMaterial* thisPtr, MonoString* name, uint32_t arrayIdx, Matrix4* __output);
+		static bool Internal_isAnimated(ScriptMaterial* thisPtr, MonoString* name, uint32_t arrayIdx);
 		static void Internal_create(MonoObject* managedInstance);
 		static void Internal_create0(MonoObject* managedInstance, MonoObject* shader);
 		static void Internal_setTexture(ScriptMaterial* thisPtr, MonoString* name, MonoObject* value, uint32_t mipLevel, uint32_t numMipLevels, uint32_t arraySlice, uint32_t numArraySlices);

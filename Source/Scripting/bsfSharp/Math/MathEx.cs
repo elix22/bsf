@@ -9,19 +9,6 @@ namespace bs
      */
 
     /// <summary>
-    /// Values that represent in which order are euler angles applied when used in transformations.
-    /// </summary>
-    public enum EulerAngleOrder
-    {
-        XYZ,
-        XZY,
-        YXZ,
-        YZX,
-        ZXY,
-        ZYX
-    };
-
-    /// <summary>
     /// Utility class providing common scalar math operations.
     /// </summary>
     public class MathEx
@@ -61,7 +48,7 @@ namespace bs
         {
             if (a < b)
                 return a;
-            
+
             return b;
         }
 
@@ -177,6 +164,20 @@ namespace bs
         /// <param name="b">Second value to compare.</param>
         /// <returns>Maximum of the two values.</returns>
         public static int Max(int a, int b)
+        {
+            if (a > b)
+                return a;
+            else
+                return b;
+        }
+
+        /// <summary>
+        /// Returns the maximum value of the two provided.
+        /// </summary>
+        /// <param name="a">First value to compare.</param>
+        /// <param name="b">Second value to compare.</param>
+        /// <returns>Maximum of the two values.</returns>
+        public static uint Max(uint a, uint b)
         {
             if (a > b)
                 return a;
@@ -581,7 +582,7 @@ namespace bs
         /// Clamps a value between zero and one.
         /// </summary>
         /// <param name="value">Value to clamp.</param>
-        /// <returns>Returns unchanged value if it is in [0, 1] range, otherwise returns value clamped to the range. 
+        /// <returns>Returns unchanged value if it is in [0, 1] range, otherwise returns value clamped to the range.
         /// </returns>
         public static float Clamp01(float value)
         {
@@ -590,7 +591,7 @@ namespace bs
 
             if (value > 1.0)
                 return 1f;
-            
+
             return value;
         }
 
@@ -703,6 +704,46 @@ namespace bs
         }
 
         /// <summary>
+        /// Performs smooth Hermite interpolation between values.
+        /// </summary>
+        /// <param name="val1">First value.</param>
+        /// <param name="val2">Second Value.</param>
+        /// <param name="t">Value in range [0, 1] that determines how much to interpolate.</param>
+        /// <returns>Hermite interpolated value at position <paramref name="t"/>.</returns>
+        public static float SmoothStep(float val1, float val2, float t)
+        {
+            t = Clamp((t - val1) / (val2 - val1), 0.0f, 1.0f);
+            return t * t * (3.0f - 2.0f * t);
+        }
+
+        /// <summary>
+        ///  Performs quintic interpolation where <paramref name="val"/> is the value to map onto a quintic S-curve.
+        /// </summary>
+        /// <param name="val">Value in range [0, 1].</param>
+        /// <returns>Value resulting from quintic interpolation.</returns>
+        public static float Quintic(float val)
+        {
+            return val * val * val * (val * (val * 6.0f - 15.0f) + 10.0f);
+        }
+
+        /// <summary>
+        /// Performs cubic interpolation between two values bound between two other values where <paramref name="f"/> is
+        /// the alpha value in range [0, 1]. If it is 0.0f the method returns <paramref name="val2"/>. If it is 1.0f the
+        /// method returns <paramref name="val3"/>.
+        /// </summary>
+        /// <param name="val1">First value.</param>
+        /// <param name="val2">Second value.</param>
+        /// <param name="val3">Third value.</param>
+        /// <param name="val4">Fourth value.</param>
+        /// <param name="f">Value in range [0, 1].</param>
+        /// <returns>Value resulting from cubic interpolation.</returns>
+        public static float Cubic(float val1, float val2, float val3, float val4, float f)
+        {
+            float t = (val4 - val3) - (val1 - val2);
+            return f * f * f * t + f * f * ((val1 - val2) - t) + f * (val3 - val1) + val2;
+        }
+
+        /// <summary>
         /// Compares two floating point numbers with an error margin.
         /// </summary>
         /// <param name="a">First number to compare.</param>
@@ -712,6 +753,62 @@ namespace bs
         public static bool ApproxEquals(float a, float b, float epsilon = 1.192092896e-07F)
         {
             return Abs(b - a) <= epsilon;
+        }
+
+        /// <summary>
+        /// Compares two 2D vectors with an error margin.
+        /// </summary>
+        /// <param name="a">First vector to compare.</param>
+        /// <param name="b">Second vector to compare.</param>
+        /// <param name="epsilon">Error margin within which the numbers should be considered equal.</param>
+        /// <returns>True if equal, false otherwise.</returns>
+        public static bool ApproxEquals(Vector2 a, Vector2 b, float epsilon = 1.192092896e-07F)
+        {
+            return Abs(b.x - a.x) <= epsilon && Abs(b.y - a.y) <= epsilon;
+        }
+
+        /// <summary>
+        /// Compares two 3D vectors with an error margin.
+        /// </summary>
+        /// <param name="a">First vector to compare.</param>
+        /// <param name="b">Second vector to compare.</param>
+        /// <param name="epsilon">Error margin within which the numbers should be considered equal.</param>
+        /// <returns>True if equal, false otherwise.</returns>
+        public static bool ApproxEquals(Vector3 a, Vector3 b, float epsilon = 1.192092896e-07F)
+        {
+            return Abs(b.x - a.x) <= epsilon && Abs(b.y - a.y) <= epsilon && Abs(b.z - a.z) <= epsilon;
+        }
+
+        /// <summary>
+        /// Compares two 4D vectors with an error margin.
+        /// </summary>
+        /// <param name="a">First vector to compare.</param>
+        /// <param name="b">Second vector to compare.</param>
+        /// <param name="epsilon">Error margin within which the numbers should be considered equal.</param>
+        /// <returns>True if equal, false otherwise.</returns>
+        public static bool ApproxEquals(Vector4 a, Vector4 b, float epsilon = 1.192092896e-07F)
+        {
+            return
+                Abs(b.x - a.x) <= epsilon &&
+                Abs(b.y - a.y) <= epsilon &&
+                Abs(b.z - a.z) <= epsilon &&
+                Abs(b.w - a.w) <= epsilon;
+        }
+
+        /// <summary>
+        /// Compares two Quaternion with an error margin.
+        /// </summary>
+        /// <param name="a">First quaternion to compare.</param>
+        /// <param name="b">Second quaternion to compare.</param>
+        /// <param name="epsilon">Error margin within which the numbers should be considered equal.</param>
+        /// <returns>True if equal, false otherwise.</returns>
+        public static bool ApproxEquals(Quaternion a, Quaternion b, float epsilon = 1.192092896e-07F)
+        {
+            return
+                Abs(b.x - a.x) <= epsilon &&
+                Abs(b.y - a.y) <= epsilon &&
+                Abs(b.z - a.z) <= epsilon &&
+                Abs(b.w - a.w) <= epsilon;
         }
     }
 
